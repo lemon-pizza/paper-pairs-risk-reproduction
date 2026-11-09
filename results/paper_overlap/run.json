@@ -1,0 +1,13 @@
+{
+  "price_sha256": "7605eab6525ddb5db66965d1559a56b48375f11a14cd1040eaa12318a545939c",
+  "paper_baseline_sha256": "44ef96575e5ebff960f03029ded8b18bca9fb81e633186a22d9e030fcc9df095",
+  "months": 77,
+  "trading_days": 1613,
+  "cap": 3,
+  "training_days": 252,
+  "risk_search_pool": "M and exact CAP3 plus top 2K ADF edges",
+  "risk_search_passes": 3,
+  "risk_search_removals_per_insert": 24,
+  "fee": 3.968253968253968e-05,
+  "bootstrap": "paired circular, 21 days, 10000 draws, seed 20261109"
+}

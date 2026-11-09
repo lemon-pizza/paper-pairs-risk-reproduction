@@ -1,0 +1,14 @@
+{
+  "completed_at": "2026-11-09T08:18:35.557899+00:00",
+  "paper": "https://arxiv.org/html/2403.07998v1",
+  "price_sha256": "7605eab6525ddb5db66965d1559a56b48375f11a14cd1040eaa12318a545939c",
+  "months": 77,
+  "trading_days": 1613,
+  "first_date": "2017-01-03",
+  "last_date": "2023-05-31",
+  "regression_window": 504,
+  "adf_lag": 1,
+  "baseline_pairs": 250,
+  "z_threshold": 2.0,
+  "daily_fee": 3.968253968253968e-05
+}
