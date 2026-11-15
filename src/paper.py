@@ -1,4 +1,4 @@
-"""Reproduce the four strategies in Qureshi and Zaman (arXiv:2403.07998v1)."""
+"""Reproduce the Z strategies in Qureshi and Zaman (arXiv:2403.07998v1)."""
 from __future__ import annotations
 
 import argparse
@@ -24,9 +24,7 @@ BASELINE_PAIRS = 250
 Z_THRESHOLD = 2.0
 DAILY_FEE = 0.01 / 252
 REFERENCE = {
-    'MQ': (0.7365, 0.6473, 1.23, 1.12),
     'MZ': (0.7487, 0.6634, 1.23, 1.12),
-    'BQ': (0.1796, -0.2615, 0.34, -0.49),
     'BZ': (0.3830, -0.1340, 0.48, -0.13),
 }
 
@@ -99,7 +97,7 @@ def maximum_weight_pairs(x, y, score, n_assets):
 
 
 def daily_signals(logs, x, y):
-    """Return close-t signals for every complete rolling regression window."""
+    """Return close-t Z signals for every complete rolling regression window."""
     px, py = logs[:, x], logs[:, y]
     beta, endpoint = rolling_endpoint(px, py)
     beta, endpoint = beta[WINDOW - 1:], endpoint[WINDOW - 1:]
@@ -108,14 +106,10 @@ def daily_signals(logs, x, y):
     # Remove the rolling intercept by centering the residuals within each window.
     residuals = y_windows - x_windows * beta[:, :, None]
     residuals -= residuals.mean(axis=2, keepdims=True)
-    q25, median, q75 = np.quantile(residuals, [.25, .5, .75], axis=2)
-    iqr = q75 - q25
     sigma = np.sqrt(np.sum(residuals**2, axis=2) / (WINDOW - 2))
-    q = np.divide(endpoint - median, iqr, out=np.zeros_like(endpoint), where=iqr > 0)
     z = np.divide(endpoint, sigma, out=np.zeros_like(endpoint), where=sigma > 0)
     z = np.clip(z, -3, 3)
     return beta, {
-        'Q': np.sign(q) * np.rint(np.abs(q)),
         'Z': np.where(np.abs(z) >= Z_THRESHOLD, np.sign(z), 0.),
     }
 
@@ -181,6 +175,7 @@ def run_month(prices):
 
 
 def performance(daily):
+    daily = daily[daily.strategy.isin(REFERENCE)]
     records = []
     for strategy, group in daily.groupby('strategy', sort=False):
         ref_gross, ref_net, ref_gross_sharpe, ref_net_sharpe = REFERENCE[strategy]

@@ -153,7 +153,7 @@ def run_month(prices, source):
     returns = np.nan_to_num(returns, nan=0.)
     stale = ~np.isfinite(raw[train_end:])
     dates = prices.index[train_end:]
-    num = {kind: np.empty((len(returns), len(pool))) for kind in ('Q', 'Z')}
+    num = {kind: np.empty((len(returns), len(pool))) for kind in ('Z',)}
     weight = {kind: np.empty_like(array) for kind, array in num.items()}
     for start in range(0, len(pool), 24):
         block = slice(start, start + 24)
@@ -164,7 +164,7 @@ def run_month(prices, source):
                 beta, signal, returns[:, ai], returns[:, bi])
 
     daily, selected, diagnostics = [], [], []
-    for kind in ('Q', 'Z'):
+    for kind in ('Z',):
         n, w = num[kind], weight[kind]
         train_n, train_w = n[:TRAIN_DAYS], w[:TRAIN_DAYS]
         risk_ids, budget, exact, moves = risk_selection(
@@ -216,6 +216,8 @@ def bootstrap(new, reference):
 
 
 def summarize(daily, months):
+    daily = daily[daily.signal.eq('Z')]
+    months = months[months.signal.eq('Z')]
     rows, contrasts = [], []
     for (kind, model), d in daily.groupby(['signal', 'model'], sort=False):
         md = months[months.signal.eq(kind) & months.model.eq(model)]
@@ -232,7 +234,7 @@ def summarize(daily, months):
             'global_optimum_months': md.global_optimal.sum(),
             'missing_end_quote_pair_days': d.pairs_with_missing_end_quote.sum(),
         })
-    for kind in ('Q', 'Z'):
+    for kind in ('Z',):
         md = months[months.signal.eq(kind)].pivot(index='cutoff', columns='model', values='score')
         returns = daily[daily.signal.eq(kind)].pivot(index='date', columns='model', values='net_return')
         for model, base in [('CAP3', 'M'), ('RISK3', 'CAP3'), ('RISK3', 'M')]:
@@ -276,7 +278,7 @@ def main():
         for index, job in enumerate(jobs, 1):
             rows, pairs, checks = job.result()
             cutoff = rows.cutoff.iloc[0]
-            for kind in ('Q', 'Z'):
+            for kind in ('Z',):
                 a = rows[rows.signal.eq(kind) & rows.model.eq('M')][columns].reset_index(drop=True)
                 b = original[original.strategy.eq('M' + kind) & original.cutoff.eq(cutoff)]
                 pd.testing.assert_frame_equal(a, b[columns].reset_index(drop=True),
