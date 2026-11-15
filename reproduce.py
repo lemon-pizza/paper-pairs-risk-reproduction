@@ -11,8 +11,8 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--paper', action='store_true', help='Reproduce MQ, MZ, BQ and BZ')
-    mode.add_argument('--overlap', action='store_true', help='Compare M, CAP3 and RISK3')
+    mode.add_argument('--paper', action='store_true', help='Reproduce MZ and BZ')
+    mode.add_argument('--overlap', action='store_true', help='Compare M, CAP3 and RISK3 with Z signals')
     parser.add_argument('--workers', type=int, default=4)
     args = parser.parse_args()
     if args.workers < 1:

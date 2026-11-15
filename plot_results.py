@@ -13,9 +13,7 @@ import pandas as pd
 
 
 PAPER_COLORS = {
-    "MQ": ("#1D4ED8", "-"),
     "MZ": ("#087F76", "-"),
-    "BQ": ("#AE6219", (0, (4, 1.6))),
     "BZ": ("#903D83", (0, (4, 1.6))),
 }
 OVERLAP_COLORS = {
@@ -36,7 +34,8 @@ def compounded(daily, key, return_column, order):
 def format_plot(title, subtitle, panel_titles, panels, styles, caption, output, font):
     colors = {"paper": "#F5F8FD", "ink": "#182941", "muted": "#526177", "grid": "#D8E1ED"}
     fig, axes = plt.subplots(
-        1, 2, figsize=(12.4, 5.9), sharey=True, facecolor=colors["paper"]
+        1, len(panels), figsize=(12.4, 5.9), sharey=True, squeeze=False,
+        facecolor=colors["paper"]
     )
     fig.subplots_adjust(left=.084, right=.972, bottom=.215, top=.745, wspace=.14)
     fig.text(.047, .924, title, fontsize=25, fontproperties=font, color=colors["ink"])
@@ -45,7 +44,7 @@ def format_plot(title, subtitle, panel_titles, panels, styles, caption, output, 
     low = min(panel.min().min() for panel in panels)
     high = max(panel.max().max() for panel in panels)
     span = high - low
-    for ax, panel_title, panel in zip(axes, panel_titles, panels):
+    for ax, panel_title, panel in zip(axes.flat, panel_titles, panels):
         ax.set_facecolor("white")
         ax.set_title(panel_title, loc="left", pad=12, fontsize=17, fontproperties=font,
                      color=colors["ink"])
@@ -70,7 +69,7 @@ def format_plot(title, subtitle, panel_titles, panels, styles, caption, output, 
                        linewidth=.7, s=20, zorder=5)
 
         legend = ax.legend(loc="upper left", bbox_to_anchor=(-.01, -.113), frameon=False,
-                           ncols=2 if len(panel.columns) == 4 else 3, fontsize=11.5,
+                           ncols=len(panel.columns), fontsize=11.5,
                            handlelength=1.55, handletextpad=.46, columnspacing=1.24,
                            borderpad=.2, labelspacing=.48, labelcolor=colors["ink"])
         for text in legend.get_texts():
@@ -99,7 +98,7 @@ def main():
     overlap = pd.read_csv(args.root / "results/paper_overlap/daily.csv", parse_dates=["date"])
 
     format_plot(
-        "선행논문 전략 재현",
+        "선행논문 Z 전략 재현",
         "2017년 1월–2023년 5월  ·  누적수익률",
         ["비용 전", "비용 후"],
         [compounded(paper, "strategy", cost, list(PAPER_COLORS))
@@ -112,9 +111,9 @@ def main():
     format_plot(
         "중복 완화와 분산 제약",
         "2017년 1월–2023년 5월  ·  비용 후 누적수익률",
-        ["Q 신호", "Z 신호"],
-        [compounded(overlap.loc[overlap.signal.eq(signal)], "model", "net_return",
-                    list(OVERLAP_COLORS)) for signal in ("Q", "Z")],
+        ["Z 신호"],
+        [compounded(overlap.loc[overlap.signal.eq("Z")], "model", "net_return",
+                    list(OVERLAP_COLORS))],
         OVERLAP_COLORS,
         "M 가중 비중복  ·  CAP3 종목당 최대 3페어  ·  RISK3 최대 3페어와 학습 분산 상한",
         args.output / "overlap_risk.png",
