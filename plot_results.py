@@ -104,7 +104,7 @@ def main():
         [compounded(paper, "strategy", cost, list(PAPER_COLORS))
          for cost in ("gross_return", "net_return")],
         PAPER_COLORS,
-        "M 가중 비중복 매칭  ·  B ADF p값 상위 250페어  ·  활성 거래일 비용 1%/252",
+        "M 가중 비중복 매칭  ·  B ADF p값 상위 250페어  ·  편도 거래금액의 5bp, 최종 청산 포함",
         args.output / "paper_reproduction.png",
         font,
     )
@@ -115,7 +115,7 @@ def main():
         [compounded(overlap.loc[overlap.signal.eq("Z")], "model", "net_return",
                     list(OVERLAP_COLORS))],
         OVERLAP_COLORS,
-        "M 가중 비중복  ·  CAP3 종목당 최대 3페어  ·  RISK3 최대 3페어와 학습 분산 상한",
+        "M 가중 비중복  ·  CAP3 최대 3페어  ·  RISK3 학습 분산 상한 추가  ·  편도 5bp, 최종 청산 포함",
         args.output / "overlap_risk.png",
         font,
     )
