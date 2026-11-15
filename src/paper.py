@@ -16,13 +16,13 @@ from scipy.sparse import coo_array
 
 from .selection import DEFAULT_PRICES, EXPECTED_SHA256, _design, adf_pvalues, sha256
 from .trading import WINDOW, rolling_endpoint, summarize_original_style
+from .costs import COST_MODEL, PairPositions, charge_costs, pair_weights
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'results/paper'
 START, END = '2017-01-01', '2023-05-31'
 BASELINE_PAIRS = 250
 Z_THRESHOLD = 2.0
-DAILY_FEE = 0.01 / 252
 REFERENCE = {
     'MZ': (0.7487, 0.6634, 1.23, 1.12),
     'BZ': (0.3830, -0.1340, 0.48, -0.13),
@@ -131,7 +131,7 @@ def portfolio_returns(beta, signal, x_return, y_return):
     numerator, weights = pair_contributions(beta, signal, x_return, y_return)
     weight = weights.sum(axis=1)
     gross = ratio_returns(numerator.sum(axis=1), weight)
-    return gross, np.where(weight > 0, DAILY_FEE, 0.), weights > 0
+    return gross, weights > 0
 
 
 def formation_graph(raw):
@@ -155,7 +155,7 @@ def run_month(prices):
     asset_returns = marked[WINDOW:] / marked[WINDOW - 1:-1] - 1
     missing_mark = ~np.isfinite(raw[WINDOW:])
     dates = prices.index[WINDOW:]
-    daily, selections = [], []
+    daily, selections, positions = [], [], {}
     for method, ids in [('M', matching), ('B', baseline)]:
         a, b = x[ids], y[ids]
         selections.append(pd.DataFrame({'cutoff': cutoff, 'method': method,
@@ -166,12 +166,15 @@ def run_month(prices):
         ry = np.nan_to_num(asset_returns[:, b], nan=0.)
         stale = missing_mark[:, a] | missing_mark[:, b]
         for kind, signal in signals.items():
-            gross, fee, active = portfolio_returns(beta, signal, rx, ry)
+            gross, active = portfolio_returns(beta, signal, rx, ry)
+            wx, wy = pair_weights(beta, signal)
+            positions[method + kind] = PairPositions(
+                dates, tuple(zip(prices.columns[a], prices.columns[b])), wx, wy, rx, ry)
             daily.append(pd.DataFrame({'date': dates, 'cutoff': cutoff, 'strategy': method + kind,
-                                       'gross_return': gross, 'net_return': gross - fee, 'fee': fee,
+                                       'gross_return': gross,
                                        'active_pairs': active.sum(axis=1),
                                        'pairs_with_missing_end_quote': (stale & active).sum(axis=1)}))
-    return pd.concat(daily, ignore_index=True), pd.concat(selections, ignore_index=True)
+    return pd.concat(daily, ignore_index=True), pd.concat(selections, ignore_index=True), positions
 
 
 def performance(daily):
@@ -208,7 +211,7 @@ def main():
     prices = pd.read_parquet(DEFAULT_PRICES).sort_index(axis=1)
     sample = prices.loc[START:END]
     months = sample.groupby(sample.index.to_period('M'))
-    daily, selections = [], []
+    daily, selections, cost_states = [], [], {}
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         jobs = []
         for _, month in months:
@@ -218,7 +221,8 @@ def main():
                 raise ValueError('Missing formation history')
             jobs.append(pool.submit(run_month, prices.iloc[first - WINDOW:last + 1]))
         for n, job in enumerate(jobs, 1):
-            rows, pairs = job.result()
+            rows, pairs, positions = job.result()
+            rows = charge_costs(rows, positions, cost_states, liquidate=n == len(jobs))
             daily.append(rows)
             selections.append(pairs)
             print(f'{n}/{len(jobs)} {rows.date.iloc[0]:%Y-%m} M={pairs.method.eq("M").sum()} '
@@ -238,7 +242,7 @@ def main():
         'price_sha256': price_hash, 'months': len(jobs), 'trading_days': len(sample),
         'first_date': str(sample.index[0].date()), 'last_date': str(sample.index[-1].date()),
         'regression_window': WINDOW, 'adf_lag': 1, 'baseline_pairs': BASELINE_PAIRS,
-        'z_threshold': Z_THRESHOLD, 'daily_fee': DAILY_FEE,
+        'z_threshold': Z_THRESHOLD, 'transaction_cost': COST_MODEL,
     }, indent=2) + '\n')
     print(metrics[['strategy', 'basis', 'cumulative_return', 'sharpe',
                    'paper_cumulative_return', 'paper_sharpe']].to_string(index=False))

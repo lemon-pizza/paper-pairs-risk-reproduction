@@ -12,6 +12,7 @@ from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 from scipy.sparse import coo_array, vstack
 
 from . import paper
+from .costs import COST_MODEL, PairPositions, charge_costs, pair_weights
 
 TRAIN_DAYS = 252
 CAP = 3
@@ -155,15 +156,19 @@ def run_month(prices, source):
     dates = prices.index[train_end:]
     num = {kind: np.empty((len(returns), len(pool))) for kind in ('Z',)}
     weight = {kind: np.empty_like(array) for kind, array in num.items()}
+    trade_beta = np.empty((len(dates), len(pool)))
+    trade_signals = {kind: np.empty_like(trade_beta) for kind in num}
     for start in range(0, len(pool), 24):
         block = slice(start, start + 24)
         ai, bi = a[block], b[block]
         beta, signals = paper.daily_signals(logs[:-1], ai, bi)
+        trade_beta[:, block] = beta[TRAIN_DAYS:]
         for kind, signal in signals.items():
+            trade_signals[kind][:, block] = signal[TRAIN_DAYS:]
             num[kind][:, block], weight[kind][:, block] = paper.pair_contributions(
                 beta, signal, returns[:, ai], returns[:, bi])
 
-    daily, selected, diagnostics = [], [], []
+    daily, selected, diagnostics, positions = [], [], [], {}
     for kind in ('Z',):
         n, w = num[kind], weight[kind]
         train_n, train_w = n[:TRAIN_DAYS], w[:TRAIN_DAYS]
@@ -177,11 +182,14 @@ def run_month(prices, source):
             assert not is_risk or train_risk <= budget * (1 + 1e-9) + 1e-16
             total_weight = w[TRAIN_DAYS:, ids].sum(axis=1)
             gross = paper.ratio_returns(n[TRAIN_DAYS:, ids].sum(axis=1), total_weight)
-            fee = np.where(total_weight > 0, paper.DAILY_FEE, 0.)
             active = w[TRAIN_DAYS:, ids] > 0
+            wx, wy = pair_weights(trade_beta[:, ids], trade_signals[kind][:, ids])
+            positions[model] = PairPositions(
+                dates, tuple(zip(prices.columns[a[ids]], prices.columns[b[ids]])),
+                wx, wy, returns[TRAIN_DAYS:, a[ids]], returns[TRAIN_DAYS:, b[ids]])
             daily.append(pd.DataFrame({
                 'date': dates, 'cutoff': cutoff, 'model': model, 'signal': kind,
-                'gross_return': gross, 'net_return': gross - fee, 'fee': fee,
+                'gross_return': gross,
                 'active_pairs': active.sum(axis=1),
                 'pairs_with_missing_end_quote': ((stale[:, a[ids]] | stale[:, b[ids]]) & active).sum(axis=1),
             }))
@@ -199,7 +207,7 @@ def run_month(prices, source):
                 'accepted_swaps': moves if is_risk else 0,
                 'candidate_edges': len(t), 'risk_search_pool': len(pool),
             })
-    return pd.concat(daily), pd.concat(selected), diagnostics
+    return pd.concat(daily), pd.concat(selected), diagnostics, positions
 
 
 def bootstrap(new, reference):
@@ -259,14 +267,16 @@ def main():
     metadata = json.loads((paper.OUTPUT / 'run.json').read_text())
     if price_hash != paper.EXPECTED_SHA256 or metadata['price_sha256'] != price_hash:
         raise ValueError('Paper replay and experiment must use the same price input')
+    if metadata.get('transaction_cost') != COST_MODEL:
+        raise ValueError('Re-run the paper baseline with the current transaction-cost model first')
     prices = pd.read_parquet(paper.DEFAULT_PRICES).sort_index(axis=1)
     reference = pd.read_csv(paper.OUTPUT / 'selections.csv', parse_dates=['cutoff'])
     m = reference[reference.method.eq('M')]
     original = pd.read_csv(paper.OUTPUT / 'daily.csv', parse_dates=['date', 'cutoff'])
     columns = ['date', 'cutoff', 'gross_return', 'net_return', 'fee', 'active_pairs',
-               'pairs_with_missing_end_quote']
+               'pairs_with_missing_end_quote', 'rebalance_turnover', 'liquidation_turnover', 'turnover']
     sample = prices.loc[paper.START:paper.END]
-    daily, selections, months = [], [], []
+    daily, selections, months, cost_states = [], [], [], {}
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         jobs = []
         for _, month in sample.groupby(sample.index.to_period('M')):
@@ -276,7 +286,9 @@ def main():
             jobs.append(pool.submit(run_month, prices.iloc[first - paper.WINDOW - TRAIN_DAYS:last + 1],
                                     m[m.cutoff.eq(cutoff)]))
         for index, job in enumerate(jobs, 1):
-            rows, pairs, checks = job.result()
+            rows, pairs, checks, positions = job.result()
+            rows = charge_costs(rows, positions, cost_states, group_column='model',
+                                liquidate=index == len(jobs))
             cutoff = rows.cutoff.iloc[0]
             for kind in ('Z',):
                 a = rows[rows.signal.eq(kind) & rows.model.eq('M')][columns].reset_index(drop=True)
@@ -298,7 +310,8 @@ def main():
         'months': len(jobs), 'trading_days': len(sample), 'cap': CAP, 'training_days': TRAIN_DAYS,
         'risk_search_pool': 'M and exact CAP3 plus top 2K ADF edges',
         'risk_search_passes': PASSES, 'risk_search_removals_per_insert': REMOVALS,
-        'fee': paper.DAILY_FEE, 'bootstrap': 'paired circular, 21 days, 10000 draws, seed 20261109',
+        'transaction_cost': COST_MODEL,
+        'bootstrap': 'paired circular, 21 days, 10000 draws, seed 20261109',
     }, indent=2) + '\n')
     print(metrics.to_string(index=False))
     print(comparisons.to_string(index=False))
