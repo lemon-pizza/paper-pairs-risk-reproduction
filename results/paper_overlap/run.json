@@ -8,6 +8,14 @@
   "risk_search_pool": "M and exact CAP3 plus top 2K ADF edges",
   "risk_search_passes": 3,
   "risk_search_removals_per_insert": 24,
-  "fee": 3.968253968253968e-05,
+  "transaction_cost": {
+    "one_way_bps": 5.0,
+    "basis": "absolute traded notional / pre-trade portfolio equity",
+    "netting": "within each pair leg; no netting across different pairs",
+    "rebalance": "daily targets versus price-drifted holdings after previous costs",
+    "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
+    "terminal_liquidation": true,
+    "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
+  },
   "bootstrap": "paired circular, 21 days, 10000 draws, seed 20261109"
 }
