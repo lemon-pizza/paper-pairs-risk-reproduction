@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 
 from . import paper
-from .costs import COST_MODEL, CostState, PairPositions, pair_weights, transaction_costs
-from .paper_overlap import TRAIN_DAYS
+from .costs import (CostState, PairPositions, executed_days, pair_weights, terminal_holdings,
+                    transaction_model, volume_rule)
+from .paper_overlap import SEARCH_STOP, TRAIN_DAYS
+from .training import TrainingBook, capital_fraction as capital_fraction
 from .trading import WINDOW, summarize_original_style
 
 PARENT = 'RISK3'
@@ -28,12 +30,6 @@ def rank_parent(pairs):
                              ascending=[False, True, True], ignore_index=True)
 
 
-def capital_fraction(variance, budget):
-    if not np.isfinite([variance, budget]).all() or min(variance, budget) < 0:
-        raise ValueError('Training variance and inherited budget must be finite and nonnegative')
-    return 1.0 if variance <= budget else float(np.sqrt(budget / variance))
-
-
 def z_history(logs, x, y):
     # Bound the memory occupied by 504-day rolling residuals, then normalize weights across all pairs.
     shape = (len(logs) - WINDOW + 1, len(x))
@@ -45,7 +41,7 @@ def z_history(logs, x, y):
     return beta, signal
 
 
-def run_month(prices, parent_pairs, budget, trading_days):
+def run_month(prices, parent_pairs, budget, trading_days, available=None):
     cutoff = prices.index[HISTORY - 1]
     ranked = rank_parent(parent_pairs)
     keep = len(ranked) // 2
@@ -58,18 +54,19 @@ def run_month(prices, parent_pairs, budget, trading_days):
         raise ValueError(f'{cutoff}: a RISK3 ticker is missing from the price input')
     with np.errstate(invalid='ignore', divide='ignore'):
         logs = np.log(prices.to_numpy())
-    returns = prices.ffill().pct_change(fill_method=None).fillna(0.).to_numpy()
+    marks = prices.ffill()
+    returns = marks.pct_change(fill_method=None).fillna(0.).to_numpy()
 
     train = slice(WINDOW, HISTORY)       # Last training return ends at the formation close.
     top_x, top_y = x[:keep], y[:keep]
     beta, signal = z_history(logs[:HISTORY - 1], top_x, top_y)
-    gross, _ = paper.portfolio_returns(beta, signal, returns[train, top_x], returns[train, top_y])
-    variance = float(gross.var(ddof=1))
-    allocation = capital_fraction(variance, budget)
+    starts = None if available is None else available[WINDOW-1:HISTORY-1]
+    book = TrainingBook(beta, signal, returns[train], top_x, top_y, starts, marks.to_numpy()[WINDOW-1:HISTORY])
+    variance, allocation, scaled_variance = book.allocation(budget)
     diagnostics = {
         'cutoff': cutoff, 'parent_pairs': len(ranked), 'selected_pairs': keep,
         'unscaled_training_variance': variance, 'risk_budget': budget,
-        'capital_fraction': allocation, 'scaled_training_variance': variance * allocation**2,
+        'capital_fraction': allocation, 'scaled_training_variance': scaled_variance,
     }
 
     end = HISTORY + trading_days
@@ -90,16 +87,10 @@ def run_month(prices, parent_pairs, budget, trading_days):
     return kept, diagnostics, positions
 
 
-def daily_rows(block, state, final_date):
-    gross = (block.x_weight * block.x_return + block.y_weight * block.y_return).sum(axis=1)
-    fees, rebalances, exits = transaction_costs(block, gross, state, block.dates[-1] == final_date)
-    size = np.abs(block.x_weight) + np.abs(block.y_weight)
-    return pd.DataFrame({
-        'date': block.dates, 'gross_return': gross, 'active_pairs': (size > 0).sum(axis=1),
-        'gross_exposure': size.sum(axis=1), 'rebalance_turnover': rebalances,
-        'liquidation_turnover': exits, 'turnover': rebalances + exits, 'fee': fees,
-        'net_return': gross - fees,
-    })
+def daily_rows(block, state, final_date, market=None):
+    rows = executed_days(block, state, block.dates[-1] == final_date, market)
+    rows.insert(0, 'date', block.dates)
+    return rows
 
 
 def performance(daily):
@@ -129,16 +120,17 @@ def main():
         parser.error('--workers must be positive')
     parent = args.output_root / 'paper_overlap'
     output = args.output_root / SUITE
-    prices, price_hash = paper.load_prices(args.prices)
-    # The pinned Parquet uses microseconds; the parent CSV dates are read in nanoseconds.
-    prices.index = prices.index.as_unit('ns')
+    prices, price_hash, market = paper.load_market(args.prices)
+    if market is None:
+        parser.error('The KOSPI extension needs the dated trading volume for each stock')
     sample = paper.trading_sample(prices, HISTORY)
     meta = json.loads((parent / 'run.json').read_text())
-    expected = {'price_sha256': price_hash, 'transaction_cost': COST_MODEL, 'training_days': TRAIN_DAYS,
+    expected = {'price_sha256': price_hash, 'transaction_cost': transaction_model(market), 'training_days': TRAIN_DAYS,
                 'first_date': str(sample.index[0].date()), 'last_date': str(sample.index[-1].date()),
-                'trading_days': len(sample), 'months': sample.index.to_period('M').nunique()}
+                'trading_days': len(sample), 'months': sample.index.to_period('M').nunique(),
+                'risk_search_stop': SEARCH_STOP, 'volume_execution': volume_rule(market)}
     for field, value in expected.items():
-        if meta[field] != value:
+        if meta.get(field) != value:
             raise ValueError(f'RISK3 parent and extension differ in {field}')
 
     pairs = pd.read_csv(parent / 'selections.csv', parse_dates=['cutoff'],
@@ -152,7 +144,7 @@ def main():
     cash = PairPositions(sample.index[:1], (), empty, empty, empty, empty)
     for model in (PARENT, MODEL):
         state = states.setdefault((model, 'next_close'), CostState())
-        first_day = daily_rows(cash, state, sample.index[-1])
+        first_day = daily_rows(cash, state, sample.index[-1], market)
         daily.append(first_day.assign(model=model, execution='next_close', cutoff=pd.NaT))
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         jobs = []
@@ -166,7 +158,8 @@ def main():
             tickers = pd.unique(pd.concat([selected.asset_x, selected.asset_y], ignore_index=True))
             extra_day = int(month.index[-1] < sample.index[-1])
             panel = prices.iloc[first - HISTORY:last + 1 + extra_day].loc[:, tickers]
-            jobs.append(pool.submit(run_month, panel, selected, params.risk_budget, len(month)))
+            available = market.available.loc[panel.index, tickers].to_numpy()
+            jobs.append(pool.submit(run_month, panel, selected, params.risk_budget, len(month), available))
         for job in jobs:
             kept, diagnostic, positions = job.result()
             selections.append(kept)
@@ -175,7 +168,7 @@ def main():
                 if not len(block.dates):
                     continue
                 model, execution = key
-                rows = daily_rows(block, states.setdefault(key, CostState()), sample.index[-1])
+                rows = daily_rows(block, states.setdefault(key, CostState()), sample.index[-1], market)
                 daily.append(rows.assign(model=model, execution=execution, cutoff=diagnostic['cutoff']))
 
     daily = pd.concat(daily, ignore_index=True)
@@ -198,8 +191,8 @@ def main():
                     parent_monthly_sha256=paper.sha256(parent / 'monthly.csv'),
                     ranking='descending parent adf_score; ties by asset_x then asset_y',
                     pair_count='floor(parent_pairs / 2)', risk_budget='parent monthly risk_budget',
-                    capital_fraction='min(1, sqrt(risk_budget / unscaled_training_variance)); 1 at zero variance',
-                    cash_return=0, executions=['signal_close', 'next_close'])
+                    capital_fraction='up to 1; solve executable training variance at the inherited budget',
+                    cash_return=0, executions=['signal_close', 'next_close'], terminal_holdings=terminal_holdings(states))
     (output / 'run.json').write_text(json.dumps(manifest, indent=2) + '\n')
     print(metrics.to_string(index=False))
 

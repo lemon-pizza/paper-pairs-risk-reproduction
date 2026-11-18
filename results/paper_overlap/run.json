@@ -8,7 +8,7 @@
   "first_date": "2017-01-03",
   "last_date": "2023-05-31",
   "risk_search_pool": "M and exact CAP3 plus top 2K ADF edges",
-  "risk_search_passes": 3,
+  "risk_search_stop": "full_pass_with_zero_accepted_swaps",
   "risk_search_removals_per_insert": 24,
   "transaction_cost": {
     "one_way_bps": 3.0,
@@ -19,5 +19,7 @@
     "terminal_liquidation": true,
     "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
   },
+  "volume_execution": "price_only_no_volume_data",
+  "terminal_holdings": [],
   "bootstrap": "paired circular, 21 days, 10000 draws, seed 20261109"
 }

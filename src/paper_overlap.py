@@ -12,12 +12,13 @@ from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 from scipy.sparse import coo_array, vstack
 
 from . import paper
-from .costs import COST_MODEL, PairPositions, charge_costs, pair_weights
+from .costs import PairPositions, charge_costs, pair_weights, terminal_holdings, transaction_model, volume_rule
+from .training import TrainingBook
 from .trading import summarize_original_style
 
 TRAIN_DAYS = 252
 CAP = 3
-PASSES = 3
+SEARCH_STOP = 'full_pass_with_zero_accepted_swaps'
 REMOVALS = 24
 OUTPUT = paper.ROOT / 'results/paper_overlap'
 MODELS = ('M', 'CAP3', 'RISK3')
@@ -70,16 +71,17 @@ def maximum_score(x, y, score, baseline, n_assets):
     return solve(remaining)
 
 
-def training_variance(num, weight, ids):
-    returns = paper.ratio_returns(num[:, ids].sum(axis=1), weight[:, ids].sum(axis=1))
+def training_variance(num, weight, ids, returns_for=paper.ratio_returns):
+    returns = returns_for(num[:, ids].sum(axis=1), weight[:, ids].sum(axis=1))
     return float(np.var(returns, ddof=1))
 
 
-def risk_selection(x, y, score, num, weight, baseline, cap_only, n_assets):
+def risk_selection(x, y, score, num, weight, baseline, cap_only, n_assets, returns_for=paper.ratio_returns,
+                   *, swaps_per_pass=None):
     """Increase ADF score through feasible one-pair replacements."""
-    budget = training_variance(num, weight, baseline)
+    budget = training_variance(num, weight, baseline, returns_for)
     tolerance = budget * 1e-9 + 1e-16
-    cap_risk = training_variance(num, weight, cap_only)
+    cap_risk = training_variance(num, weight, cap_only, returns_for)
     if cap_risk <= budget + tolerance:
         return cap_only, budget, True, 0
 
@@ -90,9 +92,9 @@ def risk_selection(x, y, score, num, weight, baseline, cap_only, n_assets):
     selected = np.zeros(len(score), dtype=bool)
     selected[ids] = True
     ranking = np.argsort(-score, kind='stable')
-    accepted = 0
-    for _ in range(PASSES):
-        before = accepted
+    total_swaps = 0
+    while True:
+        accepted = 0
         for add in ranking:
             if selected[add]:
                 continue
@@ -109,7 +111,7 @@ def risk_selection(x, y, score, num, weight, baseline, cap_only, n_assets):
             remove = ids[replace]
             trial_num = n[:, None] + num[:, add, None] - num[:, remove]
             trial_weight = w[:, None] + weight[:, add, None] - weight[:, remove]
-            risk = paper.ratio_returns(trial_num, trial_weight).var(axis=0, ddof=1)
+            risk = returns_for(trial_num, trial_weight).var(axis=0, ddof=1)
             valid = np.flatnonzero(risk <= budget + tolerance)
             if not len(valid):
                 continue
@@ -124,14 +126,17 @@ def risk_selection(x, y, score, num, weight, baseline, cap_only, n_assets):
             ids[replace[best]] = add
             n, w = trial_num[:, best], trial_weight[:, best]
             accepted += 1
-        if accepted == before:
+        if swaps_per_pass is not None:
+            swaps_per_pass.append(accepted)
+        total_swaps += accepted
+        if accepted == 0:
             break
-    if training_variance(num, weight, ids) > budget + tolerance:
+    if training_variance(num, weight, ids, returns_for) > budget + tolerance:
         raise ValueError('Risk search violated its training budget')
-    return ids, budget, False, accepted
+    return ids, budget, False, total_swaps
 
 
-def run_month(prices, source):
+def run_month(prices, source, available=None):
     train_end = TRAIN_DAYS + paper.WINDOW
     cutoff = prices.index[train_end - 1]
     raw = prices.to_numpy()
@@ -155,10 +160,10 @@ def run_month(prices, source):
     returns = np.nan_to_num(returns, nan=0.)
     stale = ~np.isfinite(raw[train_end:])
     dates = prices.index[train_end:]
-    num = {kind: np.empty((len(returns), len(pool))) for kind in ('Z',)}
-    weight = {kind: np.empty_like(array) for kind, array in num.items()}
+    formation_beta = np.empty((TRAIN_DAYS, len(pool)))
+    formation_signal = np.empty_like(formation_beta)
     trade_beta = np.empty((len(dates), len(pool)))
-    trade_signals = {kind: np.empty_like(trade_beta) for kind in num}
+    trade_signals = {'Z': np.empty_like(trade_beta)}
     for start in range(0, len(pool), 24):
         block = slice(start, start + 24)
         ai, bi = a[block], b[block]
@@ -166,29 +171,29 @@ def run_month(prices, source):
         # The preceding 252 training returns retain their original rolling windows.
         train_beta, train_signals = paper.daily_signals(logs[:train_end - 1], ai, bi)
         out_beta, out_signals = paper.daily_signals(logs[TRAIN_DAYS:-1], ai, bi)
+        formation_beta[:, block] = train_beta
+        formation_signal[:, block] = train_signals['Z']
         trade_beta[:, block] = out_beta
-        beta = np.concatenate((train_beta, out_beta))
-        for kind, out_signal in out_signals.items():
-            trade_signals[kind][:, block] = out_signal
-            signal = np.concatenate((train_signals[kind], out_signal))
-            num[kind][:, block], weight[kind][:, block] = paper.pair_contributions(
-                beta, signal, returns[:, ai], returns[:, bi])
+        trade_signals['Z'][:, block] = out_signals['Z']
 
     daily, selected, diagnostics, positions = [], [], [], {}
     for kind in ('Z',):
-        n, w = num[kind], weight[kind]
-        train_n, train_w = n[:TRAIN_DAYS], w[:TRAIN_DAYS]
+        can_trade = None if available is None else available[paper.WINDOW-1:train_end-1]
+        book = TrainingBook(formation_beta, formation_signal, returns[:TRAIN_DAYS], a, b,
+                            can_trade, marked[paper.WINDOW-1:train_end])
+        train_n, train_w = book.num, book.weight
+        swaps_per_pass = []
         risk_ids, budget, exact, moves = risk_selection(
-            a, b, scores, train_n, train_w, base_ids, cap_ids, raw.shape[1])
+            a, b, scores, train_n, train_w, base_ids, cap_ids, raw.shape[1], book.returns,
+            swaps_per_pass=swaps_per_pass)
         for model, ids in zip(MODELS, (base_ids, cap_ids, risk_ids)):
             is_risk = model == 'RISK3'
             max_degree = int(degree(a, b, ids, raw.shape[1]).max())
             assert len(np.unique(ids)) == k and max_degree <= (1 if model == 'M' else CAP)
-            train_risk = training_variance(train_n, train_w, ids)
+            train_risk = training_variance(train_n, train_w, ids, book.returns)
             assert not is_risk or train_risk <= budget * (1 + 1e-9) + 1e-16
-            total_weight = w[TRAIN_DAYS:, ids].sum(axis=1)
-            gross = paper.ratio_returns(n[TRAIN_DAYS:, ids].sum(axis=1), total_weight)
-            active = w[TRAIN_DAYS:, ids] > 0
+            gross, active = paper.portfolio_returns(trade_beta[:, ids], trade_signals[kind][:, ids],
+                                                   returns[TRAIN_DAYS:, a[ids]], returns[TRAIN_DAYS:, b[ids]])
             wx, wy = pair_weights(trade_beta[:, ids], trade_signals[kind][:, ids])
             positions[model] = PairPositions(
                 dates, tuple(zip(prices.columns[a[ids]], prices.columns[b[ids]])),
@@ -211,6 +216,8 @@ def run_month(prices, source):
                 'realized_variance': float(np.var(gross, ddof=1)),
                 'global_optimal': exact if is_risk else True,
                 'accepted_swaps': moves if is_risk else 0,
+                'search_passes': len(swaps_per_pass) if is_risk else 0,
+                'swaps_per_pass': json.dumps(swaps_per_pass if is_risk else []),
                 'candidate_edges': len(t), 'risk_search_pool': len(pool),
             })
     return pd.concat(daily), pd.concat(selected), diagnostics, positions
@@ -275,15 +282,17 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error('--workers must be positive')
-    prices, price_hash = paper.load_prices(args.prices)
+    prices, price_hash, market = paper.load_market(args.prices)
     sample = paper.trading_sample(prices, paper.WINDOW + TRAIN_DAYS)
     paper_output = args.output_root / 'paper'
     output = args.output_root / 'paper_overlap'
     metadata = json.loads((paper_output / 'run.json').read_text())
     if metadata['price_sha256'] != price_hash:
         raise ValueError('Paper replay and experiment must use the same price input')
-    if metadata.get('transaction_cost') != COST_MODEL:
+    if metadata.get('transaction_cost') != transaction_model(market):
         raise ValueError('Re-run the paper baseline with the current transaction-cost model first')
+    if metadata.get('volume_execution', volume_rule(None)) != volume_rule(market):
+        raise ValueError('Re-run the paper baseline with the same volume execution rule first')
     if (metadata['first_date'] != str(sample.index[0].date())
             or metadata['last_date'] != str(sample.index[-1].date())
             or metadata['trading_days'] != len(sample)):
@@ -301,12 +310,16 @@ def main():
             first = prices.index.get_loc(month.index[0])
             last = prices.index.get_loc(month.index[-1])
             cutoff = prices.index[first - 1]
-            jobs.append(pool.submit(run_month, prices.iloc[first - paper.WINDOW - TRAIN_DAYS:last + 1],
-                                    m[m.cutoff.eq(cutoff)]))
+            panel = slice(first - paper.WINDOW - TRAIN_DAYS, last + 1)
+            available = None if market is None else market.available.iloc[panel].to_numpy()
+            jobs.append(pool.submit(run_month, prices.iloc[panel], m[m.cutoff.eq(cutoff)], available))
         for index, job in enumerate(jobs, 1):
             rows, pairs, checks, positions = job.result()
             rows = charge_costs(rows, positions, cost_states, group_column='model',
-                                liquidate=index == len(jobs))
+                                liquidate=index == len(jobs), market=market)
+            if market is not None:
+                for check in checks:
+                    check['realized_variance'] = rows.loc[rows.model.eq(check['model']), 'gross_return'].var()
             cutoff = rows.cutoff.iloc[0]
             for kind in ('Z',):
                 a = rows[rows.signal.eq(kind) & rows.model.eq('M')][columns].reset_index(drop=True)
@@ -328,8 +341,9 @@ def main():
         'months': len(jobs), 'trading_days': len(sample), 'cap': CAP, 'training_days': TRAIN_DAYS,
         'first_date': str(sample.index[0].date()), 'last_date': str(sample.index[-1].date()),
         'risk_search_pool': 'M and exact CAP3 plus top 2K ADF edges',
-        'risk_search_passes': PASSES, 'risk_search_removals_per_insert': REMOVALS,
-        'transaction_cost': COST_MODEL,
+        'risk_search_stop': SEARCH_STOP, 'risk_search_removals_per_insert': REMOVALS,
+        'transaction_cost': transaction_model(market),
+        'volume_execution': volume_rule(market), 'terminal_holdings': terminal_holdings(cost_states),
         'bootstrap': 'paired circular, 21 days, 10000 draws, seed 20261109',
     }, indent=2) + '\n')
     print(metrics.to_string(index=False))

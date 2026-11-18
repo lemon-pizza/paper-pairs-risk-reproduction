@@ -102,6 +102,7 @@ def main():
     results = args.results_root or args.root / "results"
     paper = pd.read_csv(results / "paper/daily.csv", parse_dates=["date"])
     overlap = pd.read_csv(results / "paper_overlap/daily.csv", parse_dates=["date"])
+    settlement = "최종 미청산분은 마지막 가격으로 평가" if "blocked_leg_orders" in paper else "최종 청산 포함"
 
     format_plot(
         "선행논문 Z 전략 재현",
@@ -110,7 +111,7 @@ def main():
         [compounded(paper, "strategy", cost, list(PAPER_COLORS))
          for cost in ("gross_return", "net_return")],
         PAPER_COLORS,
-        f"M 가중 비중복 매칭  ·  B ADF p값이 가장 낮은 250페어  ·  편도 거래금액의 {FEE_BPS:g}bp, 최종 청산 포함",
+        f"M 가중 비중복 매칭  ·  B ADF p값이 가장 낮은 250페어  ·  편도 거래금액의 {FEE_BPS:g}bp, {settlement}",
         args.output / "paper_reproduction.png",
         font,
     )
@@ -121,7 +122,7 @@ def main():
         [compounded(overlap.loc[overlap.signal.eq("Z")], "model", "net_return",
                     list(OVERLAP_COLORS))],
         OVERLAP_COLORS,
-        f"M 가중 비중복  ·  CAP3 최대 3페어  ·  RISK3 학습 분산 상한 추가  ·  편도 {FEE_BPS:g}bp, 최종 청산 포함",
+        f"M 가중 비중복  ·  CAP3 최대 3페어  ·  RISK3 학습 분산 상한 추가  ·  편도 {FEE_BPS:g}bp, {settlement}",
         args.output / "overlap_risk.png",
         font,
     )
@@ -137,7 +138,7 @@ def main():
             "RISK3 확장 · ADF 상위 절반과 분산 상한",
             f"{args.market}  ·  2017년 1월–2023년 5월  ·  비용 후 누적수익률",
             ["신호일 종가 체결", "다음 거래일 종가 체결"], panels, styles,
-            f"원형 RISK3와 같은 월별 분산 한도  ·  잔여 자금은 현금  ·  편도 {FEE_BPS:g}bp",
+            f"원형 RISK3와 같은 월별 분산 한도  ·  편도 {FEE_BPS:g}bp, {settlement}",
             args.output / "risk3_adf_half.png", font,
         )
 

@@ -8,16 +8,250 @@
   "first_date": "2017-01-02",
   "last_date": "2023-05-31",
   "risk_search_pool": "M and exact CAP3 plus top 2K ADF edges",
-  "risk_search_passes": 3,
+  "risk_search_stop": "full_pass_with_zero_accepted_swaps",
   "risk_search_removals_per_insert": 24,
   "transaction_cost": {
     "one_way_bps": 3.0,
     "basis": "absolute traded notional / pre-trade portfolio equity",
     "netting": "within each pair leg; no netting across different pairs",
     "rebalance": "daily targets versus price-drifted holdings after previous costs",
-    "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
-    "terminal_liquidation": true,
-    "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
+    "monthly_boundary": "removed positions target zero; blocked shares carry until an executable close",
+    "terminal_liquidation": "attempt at final close; mark and report any remaining holdings",
+    "execution_prices": "observed execution close with positive volume and a valid price; forward fill marks only"
   },
+  "volume_execution": "positive_volume_and_valid_close",
+  "terminal_holdings": [
+    {
+      "strategy": "M",
+      "asset_x": "002000",
+      "asset_y": "095720",
+      "x_weight": 0.008793522399464855,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "M",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.005335682986634702,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "M",
+      "asset_x": "003080",
+      "asset_y": "004200",
+      "x_weight": 0.0,
+      "y_weight": -0.005695824582433725
+    },
+    {
+      "strategy": "M",
+      "asset_x": "003230",
+      "asset_y": "005450",
+      "x_weight": 0.0,
+      "y_weight": 0.009018540396469167
+    },
+    {
+      "strategy": "M",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.005418542451517164
+    },
+    {
+      "strategy": "M",
+      "asset_x": "005980",
+      "asset_y": "095720",
+      "x_weight": 0.006649600959367518,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "M",
+      "asset_x": "009420",
+      "asset_y": "093230",
+      "x_weight": 0.0,
+      "y_weight": 0.004955854760589776
+    },
+    {
+      "strategy": "M",
+      "asset_x": "009830",
+      "asset_y": "012600",
+      "x_weight": 0.0,
+      "y_weight": 0.0049431763216781005
+    },
+    {
+      "strategy": "M",
+      "asset_x": "049800",
+      "asset_y": "110570",
+      "x_weight": 0.0,
+      "y_weight": 0.02399508408204129
+    },
+    {
+      "strategy": "M",
+      "asset_x": "090370",
+      "asset_y": "109070",
+      "x_weight": 0.0,
+      "y_weight": 0.0029003925077907035
+    },
+    {
+      "strategy": "M",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.012279328878205676,
+      "y_weight": -0.012158591019815979
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "001230",
+      "asset_y": "006980",
+      "x_weight": 0.006215233623092754,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "002300",
+      "asset_y": "004250",
+      "x_weight": -0.0025166947818384806,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "002300",
+      "asset_y": "025000",
+      "x_weight": -0.002627855718606549,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.0035642245136681744,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "003010",
+      "asset_y": "004200",
+      "x_weight": 0.0,
+      "y_weight": -0.0040321141997116386
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "003070",
+      "asset_y": "012600",
+      "x_weight": 0.0,
+      "y_weight": 0.0032378750261282483
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.004660048172611605
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "004200",
+      "asset_y": "023960",
+      "x_weight": -0.003479722338472416,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "005680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.004245561063057343
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "011160",
+      "asset_y": "015230",
+      "x_weight": -0.006580675414035639,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "CAP3",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.010712515431886548,
+      "y_weight": -0.010607183439882565
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "001230",
+      "asset_y": "006980",
+      "x_weight": 0.005949098292906141,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "002300",
+      "asset_y": "004250",
+      "x_weight": -0.0026251673390722623,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "002300",
+      "asset_y": "025000",
+      "x_weight": -0.0027411194452593443,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.0037178468560924226,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "003010",
+      "asset_y": "004200",
+      "x_weight": 0.0,
+      "y_weight": -0.004205903147603788
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "003070",
+      "asset_y": "012600",
+      "x_weight": 0.0,
+      "y_weight": 0.0031597372712370898
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.004573038866844235
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "004200",
+      "asset_y": "023960",
+      "x_weight": -0.0036297025360082784,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "005680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.004166290783651071
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "011160",
+      "asset_y": "015230",
+      "x_weight": -0.006004494558201212,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.010919621640703365,
+      "y_weight": -0.010812253254010478
+    }
+  ],
   "bootstrap": "paired circular, 21 days, 10000 draws, seed 20261109"
 }

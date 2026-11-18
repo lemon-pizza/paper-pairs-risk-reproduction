@@ -1,5 +1,5 @@
 {
-  "completed_at": "2026-11-18T10:23:49.368982+00:00",
+  "completed_at": "2026-11-18T13:09:11.345215+00:00",
   "paper": "https://arxiv.org/html/2403.07998v1",
   "price_sha256": "7605eab6525ddb5db66965d1559a56b48375f11a14cd1040eaa12318a545939c",
   "months": 77,
@@ -18,5 +18,7 @@
     "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
     "terminal_liquidation": true,
     "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
-  }
+  },
+  "volume_execution": "price_only_no_volume_data",
+  "terminal_holdings": []
 }

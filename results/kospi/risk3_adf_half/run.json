@@ -5,26 +5,350 @@
     "basis": "absolute traded notional / pre-trade portfolio equity",
     "netting": "within each pair leg; no netting across different pairs",
     "rebalance": "daily targets versus price-drifted holdings after previous costs",
-    "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
-    "terminal_liquidation": true,
-    "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
+    "monthly_boundary": "removed positions target zero; blocked shares carry until an executable close",
+    "terminal_liquidation": "attempt at final close; mark and report any remaining holdings",
+    "execution_prices": "observed execution close with positive volume and a valid price; forward fill marks only"
   },
   "training_days": 252,
   "first_date": "2017-01-02",
   "last_date": "2023-05-31",
   "trading_days": 1577,
   "months": 77,
+  "risk_search_stop": "full_pass_with_zero_accepted_swaps",
+  "volume_execution": "positive_volume_and_valid_close",
   "model": "RISK3_half_adf_budget",
   "parent": "RISK3",
-  "parent_selections_sha256": "772307a51c5dd447a1a308eafd058479f175a0ab3e3b821c403189f952507a8a",
-  "parent_monthly_sha256": "9fe2c1ea89fb2e0638d251cf99986c4925b9e90213c15112292ae971619b8b65",
+  "parent_selections_sha256": "e4300a3dcd70ef170a584a70033832df5fd25aadc402ac11a87c12cede6edad8",
+  "parent_monthly_sha256": "db382280142144da2b3e9b352f95f27553b5ccf6171106762ce61c0f7c4ee3c8",
   "ranking": "descending parent adf_score; ties by asset_x then asset_y",
   "pair_count": "floor(parent_pairs / 2)",
   "risk_budget": "parent monthly risk_budget",
-  "capital_fraction": "min(1, sqrt(risk_budget / unscaled_training_variance)); 1 at zero variance",
+  "capital_fraction": "up to 1; solve executable training variance at the inherited budget",
   "cash_return": 0,
   "executions": [
     "signal_close",
     "next_close"
+  ],
+  "terminal_holdings": [
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "001230",
+      "asset_y": "006980",
+      "x_weight": 0.005966832074189171,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "002300",
+      "asset_y": "004250",
+      "x_weight": -0.002738572655339845,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "002300",
+      "asset_y": "025000",
+      "x_weight": -0.00286025827020488,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.003876474003486683,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "003010",
+      "asset_y": "004200",
+      "x_weight": 0.0,
+      "y_weight": -0.004365515692376894
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "003070",
+      "asset_y": "012600",
+      "x_weight": 0.0,
+      "y_weight": 0.003196915495082726
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.005539796998097385
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "004200",
+      "asset_y": "023960",
+      "x_weight": -0.0037794634240050345,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "005680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.005055468628220962
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "005950",
+      "asset_y": "083370",
+      "x_weight": 0.0,
+      "y_weight": -0.00777519006622113
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "008970",
+      "asset_y": "103130",
+      "x_weight": 0.0,
+      "y_weight": 0.003294416355848938
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "011160",
+      "asset_y": "015230",
+      "x_weight": -0.0055244612135358084,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.012304235413126401,
+      "y_weight": -0.012175927674459831
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "next_close",
+      "asset_x": "101140",
+      "asset_y": "119650",
+      "x_weight": 0.004382146921663966,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "001230",
+      "asset_y": "006980",
+      "x_weight": 0.009415611306924757,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "002300",
+      "asset_y": "004250",
+      "x_weight": -0.0042480772148377165,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "002300",
+      "asset_y": "025000",
+      "x_weight": -0.004436836087776058,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.006013191162196521,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.006637178371826679
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "004200",
+      "asset_y": "023960",
+      "x_weight": -0.005862708233985468,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "005950",
+      "asset_y": "083370",
+      "x_weight": 0.0,
+      "y_weight": -0.013589871107409095
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "next_close",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.012362751891817146,
+      "y_weight": -0.012233833947249593
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "001230",
+      "asset_y": "006980",
+      "x_weight": 0.005949098292906141,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "002300",
+      "asset_y": "004250",
+      "x_weight": -0.002625167339072261,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "002300",
+      "asset_y": "025000",
+      "x_weight": -0.002741119445259344,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.0037178468560924213,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "003010",
+      "asset_y": "004200",
+      "x_weight": 0.0,
+      "y_weight": -0.004205903147603786
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "003070",
+      "asset_y": "012600",
+      "x_weight": 0.0,
+      "y_weight": 0.0031597372712370885
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.004573038866844231
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "004200",
+      "asset_y": "023960",
+      "x_weight": -0.0036297025360082775,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "005680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.004166290783651071
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "011160",
+      "asset_y": "015230",
+      "x_weight": -0.006004494558201209,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3",
+      "execution": "signal_close",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.01091962164070336,
+      "y_weight": -0.010812253254010471
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "001230",
+      "asset_y": "006980",
+      "x_weight": 0.008864288170531536,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "002300",
+      "asset_y": "004250",
+      "x_weight": -0.00394882670967834,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "002300",
+      "asset_y": "025000",
+      "x_weight": -0.004123244076198207,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "002300",
+      "asset_y": "077970",
+      "x_weight": -0.005592456050066383,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "003680",
+      "asset_y": "079660",
+      "x_weight": 0.0,
+      "y_weight": 0.0059211108070424245
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "004200",
+      "asset_y": "023960",
+      "x_weight": -0.0054598676850222995,
+      "y_weight": 0.0
+    },
+    {
+      "strategy": "RISK3_half_adf_budget",
+      "execution": "signal_close",
+      "asset_x": "090990",
+      "asset_y": "091000",
+      "x_weight": 0.009489452734002769,
+      "y_weight": -0.009396146641156957
+    }
   ]
 }

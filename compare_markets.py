@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.risk3_adf_half import MODEL as HALF_MODEL, SUITE as HALF_SUITE
+from src.paper_overlap import SEARCH_STOP
 from src.selection import sha256
 from src.trading import summarize_original_style
 
@@ -26,7 +27,10 @@ def market_rows(market, folder):
         runs.append((HALF_SUITE, extension))
         suites.append((HALF_SUITE, 'model', (HALF_MODEL,)))
     for suite, run in runs:
-        for key in ('price_sha256', 'first_date', 'last_date', 'trading_days', 'months', 'transaction_cost'):
+        if run.get('risk_search_stop') != SEARCH_STOP:
+            raise ValueError(f'{market}: re-run {suite} with the current search stopping rule')
+        for key in ('price_sha256', 'first_date', 'last_date', 'trading_days', 'months',
+                    'transaction_cost', 'volume_execution'):
             if baseline[key] != run[key]:
                 raise ValueError(f'{market}: paper and {suite} runs differ in {key}')
     rows = []

@@ -21,6 +21,20 @@ class MarketComparisonTests(unittest.TestCase):
             prices, _ = paper.load_prices(csv)
             self.assertEqual(list(prices.columns), ['000020', '000030'])
             np.testing.assert_allclose(prices.to_numpy(), [[100, 95], [120, np.nan]])
+            _, _, market = paper.load_market(csv)
+            np.testing.assert_array_equal(market.available.to_numpy(), [[True, True], [False, False]])
+
+    def test_delisting_and_unknown_volume_block_orders_only_from_their_execution_date(self):
+        with TemporaryDirectory() as tmp:
+            csv = Path(tmp) / 'prices.csv'
+            csv.write_text('date,ticker,adjusted_price,volume,delisting_date\n'
+                           '2020-01-06,000020,100,20,\n'
+                           '2020-01-02,000020,100,10,2020-01-03\n'
+                           '2020-01-03,000020,100,10,2020-01-03\n'
+                           '2020-01-06,000030,90,,\n')
+            _, _, market = paper.load_market(csv)
+            self.assertEqual(market.available['000020'].tolist(), [True, False, False])
+            self.assertFalse(market.available['000030'].any())
 
     def test_parquet_identifiers_round_trip_through_selection_csv(self):
         with TemporaryDirectory() as tmp:

@@ -16,7 +16,8 @@ from scipy.sparse import coo_array
 
 from .selection import DEFAULT_PRICES, EXPECTED_SHA256, _design, adf_pvalues, sha256
 from .trading import WINDOW, rolling_endpoint, summarize_original_style
-from .costs import COST_MODEL, PairPositions, charge_costs, pair_weights
+from .costs import (ExecutionMarket, PairPositions, charge_costs, pair_weights, terminal_holdings,
+                    transaction_model, volume_rule)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'results/paper'
@@ -205,17 +206,30 @@ def add_input_arguments(parser):
     parser.add_argument('--output-root', type=Path, default=ROOT / 'results')
 
 
-def load_prices(path):
+def load_market(path):
     path = DEFAULT_PRICES if path is None else Path(path).resolve()
     price_hash = sha256(path)
     if path == DEFAULT_PRICES and price_hash != EXPECTED_SHA256:
         raise ValueError('Unexpected original price input')
+    volume = None
     if path.suffix.lower() == '.csv':
-        prices = pd.read_csv(path, usecols=['date', 'ticker', 'adjusted_price'],
-                             dtype={'ticker': str, 'adjusted_price': float}, parse_dates=['date'])
-        if prices[['date', 'ticker']].isna().any().any():
+        fields = {'date', 'ticker', 'adjusted_price', 'volume', 'delisting_date'}
+        rows = pd.read_csv(path, usecols=lambda c: c in fields,
+                           dtype={'ticker': str, 'adjusted_price': float}, parse_dates=['date'])
+        if rows[['date', 'ticker']].isna().any().any():
             raise ValueError('Each price row needs a date and ticker')
-        prices = prices.pivot(index='date', columns='ticker', values='adjusted_price')
+        prices = rows.pivot(index='date', columns='ticker', values='adjusted_price')
+        if 'volume' in rows:
+            volumes = pd.to_numeric(rows.volume, errors='raise')
+            if (volumes < 0).any() or np.isinf(volumes).any():
+                raise ValueError('Volume must be nonnegative and finite when observed')
+            available = volumes.gt(0) & rows.adjusted_price.gt(0) & np.isfinite(rows.adjusted_price)
+            if 'delisting_date' in rows:
+                ordered = rows[['date', 'ticker', 'delisting_date']].sort_values('date')
+                delisted = pd.to_datetime(ordered.delisting_date).groupby(ordered.ticker, sort=False).ffill()
+                delisted = delisted.reindex(rows.index)
+                available &= delisted.isna() | rows.date.lt(delisted)
+            volume = rows.assign(available=available).pivot(index='date', columns='ticker', values='available')
     else:
         prices = pd.read_parquet(path)
     if (not isinstance(prices.index, pd.DatetimeIndex) or prices.index.hasnans
@@ -226,7 +240,19 @@ def load_prices(path):
     prices.columns = prices.columns.map(str)
     if not prices.columns.is_unique:
         raise ValueError('Prices require a unique column for each ticker')
-    return prices.sort_index().sort_index(axis=1), price_hash
+    prices = prices.sort_index().sort_index(axis=1)
+    prices.index = prices.index.as_unit('ns')
+    market = None
+    if volume is not None:
+        prices = prices.where(prices.gt(0) & np.isfinite(prices))
+        available = volume.reindex(index=prices.index, columns=prices.columns).eq(True)
+        market = ExecutionMarket(prices, available)
+    return prices, price_hash, market
+
+
+def load_prices(path):
+    prices, price_hash, _ = load_market(path)
+    return prices, price_hash
 
 
 def trading_sample(prices, lookback):
@@ -247,7 +273,7 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error('--workers must be positive')
-    prices, price_hash = load_prices(args.prices)
+    prices, price_hash, market = load_market(args.prices)
     sample = trading_sample(prices, WINDOW)
     output = args.output_root / 'paper'
     months = sample.groupby(sample.index.to_period('M'))
@@ -260,7 +286,7 @@ def main():
             jobs.append(pool.submit(run_month, prices.iloc[first - WINDOW:last + 1]))
         for n, job in enumerate(jobs, 1):
             rows, pairs, positions = job.result()
-            rows = charge_costs(rows, positions, cost_states, liquidate=n == len(jobs))
+            rows = charge_costs(rows, positions, cost_states, liquidate=n == len(jobs), market=market)
             daily.append(rows)
             selections.append(pairs)
             print(f'{n}/{len(jobs)} {rows.date.iloc[0]:%Y-%m} M={pairs.method.eq("M").sum()} '
@@ -280,7 +306,8 @@ def main():
         'price_sha256': price_hash, 'months': len(jobs), 'trading_days': len(sample),
         'first_date': str(sample.index[0].date()), 'last_date': str(sample.index[-1].date()),
         'regression_window': WINDOW, 'adf_lag': 1, 'baseline_pairs': BASELINE_PAIRS,
-        'z_threshold': Z_THRESHOLD, 'transaction_cost': COST_MODEL,
+        'z_threshold': Z_THRESHOLD, 'transaction_cost': transaction_model(market),
+        'volume_execution': volume_rule(market), 'terminal_holdings': terminal_holdings(cost_states),
     }, indent=2) + '\n')
     print(metrics[['strategy', 'basis', 'cumulative_return', 'annualized_return', 'sharpe',
                    'paper_cumulative_return', 'paper_sharpe']].to_string(index=False))
