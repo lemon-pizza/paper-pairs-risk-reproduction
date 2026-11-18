@@ -12,6 +12,7 @@ from matplotlib.ticker import MaxNLocator, PercentFormatter
 import pandas as pd
 
 from src.costs import FEE_BPS
+from src.risk3_adf_half import MODEL as HALF_MODEL, SUITE as HALF_SUITE
 
 
 PAPER_COLORS = {
@@ -124,6 +125,21 @@ def main():
         args.output / "overlap_risk.png",
         font,
     )
+    extension_path = results / HALF_SUITE / "daily.csv"
+    if extension_path.is_file():
+        daily = pd.read_csv(extension_path, parse_dates=["date"])
+        label = "RISK3 + ADF 50%"
+        styles = {"RISK3": ("#087F76", (0, (4, 2))), label: ("#754187", "-")}
+        panels = [compounded(daily[daily.execution.eq(execution)], "model", "net_return",
+                             ["RISK3", HALF_MODEL]).rename(columns={HALF_MODEL: label})
+                  for execution in ("signal_close", "next_close")]
+        format_plot(
+            "RISK3 확장 · ADF 상위 절반과 분산 상한",
+            f"{args.market}  ·  2017년 1월–2023년 5월  ·  비용 후 누적수익률",
+            ["신호일 종가 체결", "다음 거래일 종가 체결"], panels, styles,
+            f"원형 RISK3와 같은 월별 분산 한도  ·  잔여 자금은 현금  ·  편도 {FEE_BPS:g}bp",
+            args.output / "risk3_adf_half.png", font,
+        )
 
 
 if __name__ == "__main__":

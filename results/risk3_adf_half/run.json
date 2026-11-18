@@ -1,0 +1,30 @@
+{
+  "price_sha256": "7605eab6525ddb5db66965d1559a56b48375f11a14cd1040eaa12318a545939c",
+  "transaction_cost": {
+    "one_way_bps": 3.0,
+    "basis": "absolute traded notional / pre-trade portfolio equity",
+    "netting": "within each pair leg; no netting across different pairs",
+    "rebalance": "daily targets versus price-drifted holdings after previous costs",
+    "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
+    "terminal_liquidation": true,
+    "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
+  },
+  "training_days": 252,
+  "first_date": "2017-01-03",
+  "last_date": "2023-05-31",
+  "trading_days": 1613,
+  "months": 77,
+  "model": "RISK3_half_adf_budget",
+  "parent": "RISK3",
+  "parent_selections_sha256": "39c8cdfa4f7ce4fd26f332bf6c26c3a74c4bde56336574d90950fbe6fb5beb29",
+  "parent_monthly_sha256": "6ee30690c46d220fa79363646553d7b5fb060c3c38f20a22f418a3b157c38f59",
+  "ranking": "descending parent adf_score; ties by asset_x then asset_y",
+  "pair_count": "floor(parent_pairs / 2)",
+  "risk_budget": "parent monthly risk_budget",
+  "capital_fraction": "min(1, sqrt(risk_budget / unscaled_training_variance)); 1 at zero variance",
+  "cash_return": 0,
+  "executions": [
+    "signal_close",
+    "next_close"
+  ]
+}

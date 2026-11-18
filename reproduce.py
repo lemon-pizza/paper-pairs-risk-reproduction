@@ -1,4 +1,4 @@
-"""Run the paper replay or its overlap and variance-constraint extension."""
+"""Run the paper replay, overlap experiment, or the ADF top-half extension of RISK3."""
 from __future__ import annotations
 
 import argparse
@@ -13,8 +13,12 @@ from src.paper import add_input_arguments
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--paper', action='store_true', help='Reproduce MZ and BZ')
-    mode.add_argument('--overlap', action='store_true', help='Compare M, CAP3 and RISK3 with Z signals')
+    mode.add_argument('--paper', dest='module', action='store_const', const='src.paper',
+                      help='Reproduce MZ and BZ')
+    mode.add_argument('--overlap', dest='module', action='store_const', const='src.paper_overlap',
+                      help='Compare M, CAP3 and RISK3 with Z signals')
+    mode.add_argument('--risk3-adf-half', dest='module', action='store_const', const='src.risk3_adf_half',
+                      help="Trade the ADF top half of RISK3 using the completed overlap run")
     parser.add_argument('--workers', type=int, default=4)
     add_input_arguments(parser)
     args = parser.parse_args()
@@ -23,8 +27,7 @@ def main():
     env = os.environ.copy()
     for name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS', 'MKL_NUM_THREADS'):
         env[name] = '1'
-    module = 'src.paper' if args.paper else 'src.paper_overlap'
-    command = [sys.executable, '-m', module, '--workers', str(args.workers),
+    command = [sys.executable, '-m', args.module, '--workers', str(args.workers),
                '--output-root', str(args.output_root.resolve())]
     if args.prices is not None:
         command.extend(['--prices', str(args.prices.resolve())])

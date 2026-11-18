@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.risk3_adf_half import MODEL as HALF_MODEL, SUITE as HALF_SUITE
+from src.selection import sha256
 from src.trading import summarize_original_style
 
 
@@ -14,14 +16,25 @@ ROOT = Path(__file__).resolve().parent / 'results'
 def market_rows(market, folder):
     baseline = json.loads((folder / 'paper/run.json').read_text())
     overlap = json.loads((folder / 'paper_overlap/run.json').read_text())
-    for key in ('price_sha256', 'first_date', 'last_date', 'trading_days', 'months', 'transaction_cost'):
-        if baseline[key] != overlap[key]:
-            raise ValueError(f'{market}: paper and overlap runs differ in {key}')
+    suites = [('paper', 'strategy', ('MZ', 'BZ')), ('paper_overlap', 'model', ('CAP3', 'RISK3'))]
+    runs = [('paper_overlap', overlap)]
+    if (folder / HALF_SUITE).is_dir():
+        extension = json.loads((folder / HALF_SUITE / 'run.json').read_text())
+        for name in ('selections', 'monthly'):
+            if extension[f'parent_{name}_sha256'] != sha256(folder / 'paper_overlap' / f'{name}.csv'):
+                raise ValueError(f'{market}: the RISK3 extension uses different parent {name}')
+        runs.append((HALF_SUITE, extension))
+        suites.append((HALF_SUITE, 'model', (HALF_MODEL,)))
+    for suite, run in runs:
+        for key in ('price_sha256', 'first_date', 'last_date', 'trading_days', 'months', 'transaction_cost'):
+            if baseline[key] != run[key]:
+                raise ValueError(f'{market}: paper and {suite} runs differ in {key}')
     rows = []
     calendar = None
-    for suite, key, names in [('paper', 'strategy', ('MZ', 'BZ')),
-                              ('paper_overlap', 'model', ('CAP3', 'RISK3'))]:
+    for suite, key, names in suites:
         data = pd.read_csv(folder / suite / 'daily.csv', parse_dates=['date'])
+        if suite == HALF_SUITE:
+            data = data[data.execution.eq('signal_close')]
         for name in names:
             returns = data[data[key].eq(name)]
             dates = pd.DatetimeIndex(returns.date)
@@ -47,6 +60,8 @@ def main():
     parser.add_argument('--kospi', type=Path, default=ROOT / 'kospi')
     parser.add_argument('--output', type=Path, default=ROOT / 'market_comparison.csv')
     args = parser.parse_args()
+    if (args.sp500 / HALF_SUITE).is_dir() != (args.kospi / HALF_SUITE).is_dir():
+        parser.error('Run the RISK3 ADF top-half extension for both markets before combining the results')
     frame = pd.DataFrame(market_rows('S&P 500', args.sp500) + market_rows('KOSPI', args.kospi))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(args.output, index=False)
