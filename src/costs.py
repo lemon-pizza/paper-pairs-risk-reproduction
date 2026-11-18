@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-FEE_BPS = 5.0
+FEE_BPS = 3.0
 FEE_RATE = FEE_BPS / 10_000
 COST_MODEL = {
     'one_way_bps': FEE_BPS,

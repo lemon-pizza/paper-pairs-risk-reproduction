@@ -177,11 +177,12 @@ def run_month(prices):
     return pd.concat(daily, ignore_index=True), pd.concat(selections, ignore_index=True), positions
 
 
-def performance(daily):
+def performance(daily, compare_paper=True):
     daily = daily[daily.strategy.isin(REFERENCE)]
     records = []
     for strategy, group in daily.groupby('strategy', sort=False):
-        ref_gross, ref_net, ref_gross_sharpe, ref_net_sharpe = REFERENCE[strategy]
+        ref_gross, ref_net, ref_gross_sharpe, ref_net_sharpe = (
+            REFERENCE[strategy] if compare_paper else (np.nan,) * 4)
         for basis, target_return, target_sharpe in [('gross', ref_gross, ref_gross_sharpe),
                                                   ('net', ref_net, ref_net_sharpe)]:
             r = group[f'{basis}_return']
@@ -190,7 +191,7 @@ def performance(daily):
             records.append({'strategy': strategy, 'basis': basis, 'days': len(r),
                             'cumulative_return': stats['cumulative_return'], 'sharpe': stats['sharpe'],
                             'sortino': stats['sortino'],
-                            'annualized_return': wealth[-1]**(252 / len(r)) - 1,
+                            'annualized_return': stats['annualized_return'],
                             'min_daily_return': r.min(), 'max_daily_return': r.max(), 'skew': r.skew(),
                             'max_drawdown': np.min(wealth / np.maximum.accumulate(wealth) - 1),
                             'paper_cumulative_return': target_return, 'paper_sharpe': target_sharpe,
@@ -199,17 +200,56 @@ def performance(daily):
     return pd.DataFrame(records)
 
 
+def add_input_arguments(parser):
+    parser.add_argument('--prices', type=Path, help='Alternative long-form adjusted-price CSV or wide Parquet')
+    parser.add_argument('--output-root', type=Path, default=ROOT / 'results')
+
+
+def load_prices(path):
+    path = DEFAULT_PRICES if path is None else Path(path).resolve()
+    price_hash = sha256(path)
+    if path == DEFAULT_PRICES and price_hash != EXPECTED_SHA256:
+        raise ValueError('Unexpected original price input')
+    if path.suffix.lower() == '.csv':
+        prices = pd.read_csv(path, usecols=['date', 'ticker', 'adjusted_price'],
+                             dtype={'ticker': str, 'adjusted_price': float}, parse_dates=['date'])
+        if prices[['date', 'ticker']].isna().any().any():
+            raise ValueError('Each price row needs a date and ticker')
+        prices = prices.pivot(index='date', columns='ticker', values='adjusted_price')
+    else:
+        prices = pd.read_parquet(path)
+    if (not isinstance(prices.index, pd.DatetimeIndex) or prices.index.hasnans
+            or not prices.index.is_unique):
+        raise ValueError('Prices require a unique daily datetime index')
+    if prices.columns.hasnans:
+        raise ValueError('Prices require a ticker for every column')
+    prices.columns = prices.columns.map(str)
+    if not prices.columns.is_unique:
+        raise ValueError('Prices require a unique column for each ticker')
+    return prices.sort_index().sort_index(axis=1), price_hash
+
+
+def trading_sample(prices, lookback):
+    sample = prices.loc[START:END]
+    if sample.empty:
+        raise ValueError(f'No trading dates between {START} and {END}')
+    history = prices.index.get_loc(sample.index[0])
+    if history < lookback:
+        raise ValueError(f'{sample.index[0]:%Y-%m-%d}: {history} prior trading days, '
+                         f'{lookback} required')
+    return sample
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--workers', type=int, default=2)
+    add_input_arguments(parser)
     args = parser.parse_args()
     if args.workers < 1:
         parser.error('--workers must be positive')
-    price_hash = sha256(DEFAULT_PRICES)
-    if price_hash != EXPECTED_SHA256:
-        raise ValueError('Unexpected price input')
-    prices = pd.read_parquet(DEFAULT_PRICES).sort_index(axis=1)
-    sample = prices.loc[START:END]
+    prices, price_hash = load_prices(args.prices)
+    sample = trading_sample(prices, WINDOW)
+    output = args.output_root / 'paper'
     months = sample.groupby(sample.index.to_period('M'))
     daily, selections, cost_states = [], [], {}
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
@@ -217,8 +257,6 @@ def main():
         for _, month in months:
             first = prices.index.get_loc(month.index[0])
             last = prices.index.get_loc(month.index[-1])
-            if first < WINDOW:
-                raise ValueError('Missing formation history')
             jobs.append(pool.submit(run_month, prices.iloc[first - WINDOW:last + 1]))
         for n, job in enumerate(jobs, 1):
             rows, pairs, positions = job.result()
@@ -231,12 +269,12 @@ def main():
     for strategy in REFERENCE:
         if not pd.DatetimeIndex(daily.loc[daily.strategy.eq(strategy), 'date']).equals(sample.index):
             raise ValueError(f'{strategy}: return dates differ from the trading calendar')
-    metrics = performance(daily)
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    daily.to_csv(OUTPUT / 'daily.csv', index=False)
-    pd.concat(selections, ignore_index=True).to_csv(OUTPUT / 'selections.csv', index=False)
-    metrics.to_csv(OUTPUT / 'metrics.csv', index=False)
-    (OUTPUT / 'run.json').write_text(json.dumps({
+    metrics = performance(daily, compare_paper=price_hash == EXPECTED_SHA256)
+    output.mkdir(parents=True, exist_ok=True)
+    daily.to_csv(output / 'daily.csv', index=False)
+    pd.concat(selections, ignore_index=True).to_csv(output / 'selections.csv', index=False)
+    metrics.to_csv(output / 'metrics.csv', index=False)
+    (output / 'run.json').write_text(json.dumps({
         'completed_at': datetime.now(timezone.utc).isoformat(),
         'paper': 'https://arxiv.org/html/2403.07998v1',
         'price_sha256': price_hash, 'months': len(jobs), 'trading_days': len(sample),
@@ -244,7 +282,7 @@ def main():
         'regression_window': WINDOW, 'adf_lag': 1, 'baseline_pairs': BASELINE_PAIRS,
         'z_threshold': Z_THRESHOLD, 'transaction_cost': COST_MODEL,
     }, indent=2) + '\n')
-    print(metrics[['strategy', 'basis', 'cumulative_return', 'sharpe',
+    print(metrics[['strategy', 'basis', 'cumulative_return', 'annualized_return', 'sharpe',
                    'paper_cumulative_return', 'paper_sharpe']].to_string(index=False))
 
 

@@ -8,8 +8,10 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MultipleLocator, PercentFormatter
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 import pandas as pd
+
+from src.costs import FEE_BPS
 
 
 PAPER_COLORS = {
@@ -55,7 +57,7 @@ def format_plot(title, subtitle, panel_titles, panels, styles, caption, output, 
             ax.spines[side].set_visible(False)
         ax.spines["bottom"].set_color(colors["grid"])
         ax.tick_params(axis="both", length=0, pad=8, labelsize=11, colors=colors["muted"])
-        ax.yaxis.set_major_locator(MultipleLocator(.10))
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=7, steps=[1, 2, 2.5, 5, 10]))
         ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
         ax.xaxis.set_major_locator(mdates.YearLocator(2))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
@@ -83,6 +85,8 @@ def format_plot(title, subtitle, panel_titles, panels, styles, caption, output, 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=".", type=Path)
+    parser.add_argument("--results-root", type=Path, help="Directory containing paper/ and paper_overlap/")
+    parser.add_argument("--market", default="S&P 500", help="Market label in chart subtitles")
     parser.add_argument("--output", default=Path("reports"), type=Path)
     parser.add_argument("--font", type=Path, help="Font file with Korean glyphs")
     args = parser.parse_args()
@@ -94,28 +98,29 @@ def main():
         font_path = fm.findfont(fm.FontProperties(family=["Noto Sans CJK KR", "NanumGothic"]),
                                 fallback_to_default=False)
     font = fm.FontProperties(fname=font_path)
-    paper = pd.read_csv(args.root / "results/paper/daily.csv", parse_dates=["date"])
-    overlap = pd.read_csv(args.root / "results/paper_overlap/daily.csv", parse_dates=["date"])
+    results = args.results_root or args.root / "results"
+    paper = pd.read_csv(results / "paper/daily.csv", parse_dates=["date"])
+    overlap = pd.read_csv(results / "paper_overlap/daily.csv", parse_dates=["date"])
 
     format_plot(
         "선행논문 Z 전략 재현",
-        "2017년 1월–2023년 5월  ·  누적수익률",
+        f"{args.market}  ·  2017년 1월–2023년 5월  ·  누적수익률",
         ["비용 전", "비용 후"],
         [compounded(paper, "strategy", cost, list(PAPER_COLORS))
          for cost in ("gross_return", "net_return")],
         PAPER_COLORS,
-        "M 가중 비중복 매칭  ·  B ADF p값 상위 250페어  ·  편도 거래금액의 5bp, 최종 청산 포함",
+        f"M 가중 비중복 매칭  ·  B ADF p값이 가장 낮은 250페어  ·  편도 거래금액의 {FEE_BPS:g}bp, 최종 청산 포함",
         args.output / "paper_reproduction.png",
         font,
     )
     format_plot(
         "중복 완화와 분산 제약",
-        "2017년 1월–2023년 5월  ·  비용 후 누적수익률",
+        f"{args.market}  ·  2017년 1월–2023년 5월  ·  비용 후 누적수익률",
         ["Z 신호"],
         [compounded(overlap.loc[overlap.signal.eq("Z")], "model", "net_return",
                     list(OVERLAP_COLORS))],
         OVERLAP_COLORS,
-        "M 가중 비중복  ·  CAP3 최대 3페어  ·  RISK3 학습 분산 상한 추가  ·  편도 5bp, 최종 청산 포함",
+        f"M 가중 비중복  ·  CAP3 최대 3페어  ·  RISK3 학습 분산 상한 추가  ·  편도 {FEE_BPS:g}bp, 최종 청산 포함",
         args.output / "overlap_risk.png",
         font,
     )

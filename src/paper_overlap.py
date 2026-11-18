@@ -13,6 +13,7 @@ from scipy.sparse import coo_array, vstack
 
 from . import paper
 from .costs import COST_MODEL, PairPositions, charge_costs, pair_weights
+from .trading import summarize_original_style
 
 TRAIN_DAYS = 252
 CAP = 3
@@ -161,10 +162,15 @@ def run_month(prices, source):
     for start in range(0, len(pool), 24):
         block = slice(start, start + 24)
         ai, bi = a[block], b[block]
-        beta, signals = paper.daily_signals(logs[:-1], ai, bi)
-        trade_beta[:, block] = beta[TRAIN_DAYS:]
-        for kind, signal in signals.items():
-            trade_signals[kind][:, block] = signal[TRAIN_DAYS:]
+        # Use the same OLS summation origin as the paper replay for trading.
+        # The preceding 252 training returns retain their original rolling windows.
+        train_beta, train_signals = paper.daily_signals(logs[:train_end - 1], ai, bi)
+        out_beta, out_signals = paper.daily_signals(logs[TRAIN_DAYS:-1], ai, bi)
+        trade_beta[:, block] = out_beta
+        beta = np.concatenate((train_beta, out_beta))
+        for kind, out_signal in out_signals.items():
+            trade_signals[kind][:, block] = out_signal
+            signal = np.concatenate((train_signals[kind], out_signal))
             num[kind][:, block], weight[kind][:, block] = paper.pair_contributions(
                 beta, signal, returns[:, ai], returns[:, bi])
 
@@ -230,11 +236,16 @@ def summarize(daily, months):
     for (kind, model), d in daily.groupby(['signal', 'model'], sort=False):
         md = months[months.signal.eq(kind) & months.model.eq(model)]
         gross, net = d.gross_return, d.net_return
+        gross_stats = summarize_original_style(gross)
+        net_stats = summarize_original_style(net)
         wealth = np.r_[1., np.cumprod(1 + net.to_numpy())]
         rows.append({
-            'signal': kind, 'model': model, 'gross_cumulative': (1 + gross).prod() - 1,
-            'net_cumulative': wealth[-1] - 1, 'net_annual_vol': net.std() * np.sqrt(252),
-            'net_sharpe': net.mean() / net.std() * np.sqrt(252),
+            'signal': kind, 'model': model, 'gross_cumulative': gross_stats['cumulative_return'],
+            'net_cumulative': net_stats['cumulative_return'],
+            'gross_annualized_return': gross_stats['annualized_return'],
+            'net_annualized_return': net_stats['annualized_return'],
+            'net_annual_vol': net.std() * np.sqrt(252),
+            'gross_sharpe': gross_stats['sharpe'], 'net_sharpe': net_stats['sharpe'],
             'net_max_drawdown': np.min(wealth / np.maximum.accumulate(wealth) - 1),
             'training_variance_ratio_mean': (md.training_variance / md.risk_budget).mean(),
             'training_over_budget_months': (md.training_variance > md.risk_budget * (1 + 1e-9) + 1e-16).sum(),
@@ -260,22 +271,29 @@ def summarize(daily, months):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--workers', type=int, default=4)
+    paper.add_input_arguments(parser)
     args = parser.parse_args()
     if args.workers < 1:
         parser.error('--workers must be positive')
-    price_hash = paper.sha256(paper.DEFAULT_PRICES)
-    metadata = json.loads((paper.OUTPUT / 'run.json').read_text())
-    if price_hash != paper.EXPECTED_SHA256 or metadata['price_sha256'] != price_hash:
+    prices, price_hash = paper.load_prices(args.prices)
+    sample = paper.trading_sample(prices, paper.WINDOW + TRAIN_DAYS)
+    paper_output = args.output_root / 'paper'
+    output = args.output_root / 'paper_overlap'
+    metadata = json.loads((paper_output / 'run.json').read_text())
+    if metadata['price_sha256'] != price_hash:
         raise ValueError('Paper replay and experiment must use the same price input')
     if metadata.get('transaction_cost') != COST_MODEL:
         raise ValueError('Re-run the paper baseline with the current transaction-cost model first')
-    prices = pd.read_parquet(paper.DEFAULT_PRICES).sort_index(axis=1)
-    reference = pd.read_csv(paper.OUTPUT / 'selections.csv', parse_dates=['cutoff'])
+    if (metadata['first_date'] != str(sample.index[0].date())
+            or metadata['last_date'] != str(sample.index[-1].date())
+            or metadata['trading_days'] != len(sample)):
+        raise ValueError('Paper baseline and overlap experiment must use the same trading sample')
+    reference = pd.read_csv(paper_output / 'selections.csv', parse_dates=['cutoff'],
+                            dtype={'asset_x': str, 'asset_y': str})
     m = reference[reference.method.eq('M')]
-    original = pd.read_csv(paper.OUTPUT / 'daily.csv', parse_dates=['date', 'cutoff'])
+    original = pd.read_csv(paper_output / 'daily.csv', parse_dates=['date', 'cutoff'])
     columns = ['date', 'cutoff', 'gross_return', 'net_return', 'fee', 'active_pairs',
                'pairs_with_missing_end_quote', 'rebalance_turnover', 'liquidation_turnover', 'turnover']
-    sample = prices.loc[paper.START:paper.END]
     daily, selections, months, cost_states = [], [], [], {}
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         jobs = []
@@ -301,13 +319,14 @@ def main():
             print(f'{index}/{len(jobs)} {rows.date.iloc[0]:%Y-%m}', flush=True)
     daily, months = pd.concat(daily, ignore_index=True), pd.DataFrame(months)
     metrics, comparisons = summarize(daily, months)
-    OUTPUT.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
     for name, frame in [('daily', daily), ('selections', pd.concat(selections, ignore_index=True)),
                         ('monthly', months), ('metrics', metrics), ('comparisons', comparisons)]:
-        frame.to_csv(OUTPUT / f'{name}.csv', index=False)
-    (OUTPUT / 'run.json').write_text(json.dumps({
-        'price_sha256': price_hash, 'paper_baseline_sha256': paper.sha256(paper.OUTPUT / 'selections.csv'),
+        frame.to_csv(output / f'{name}.csv', index=False)
+    (output / 'run.json').write_text(json.dumps({
+        'price_sha256': price_hash, 'paper_baseline_sha256': paper.sha256(paper_output / 'selections.csv'),
         'months': len(jobs), 'trading_days': len(sample), 'cap': CAP, 'training_days': TRAIN_DAYS,
+        'first_date': str(sample.index[0].date()), 'last_date': str(sample.index[-1].date()),
         'risk_search_pool': 'M and exact CAP3 plus top 2K ADF edges',
         'risk_search_passes': PASSES, 'risk_search_removals_per_insert': REMOVALS,
         'transaction_cost': COST_MODEL,

@@ -1,0 +1,23 @@
+{
+  "price_sha256": "e6a9e74a3f23954603542d05ae5dc7dca62e0b88c0795e1aba6291bf0fa37f93",
+  "paper_baseline_sha256": "d4105e275ad5bcd19597c620f29df362984276a363a72b80babe5fa82ce4e77e",
+  "months": 77,
+  "trading_days": 1577,
+  "cap": 3,
+  "training_days": 252,
+  "first_date": "2017-01-02",
+  "last_date": "2023-05-31",
+  "risk_search_pool": "M and exact CAP3 plus top 2K ADF edges",
+  "risk_search_passes": 3,
+  "risk_search_removals_per_insert": 24,
+  "transaction_cost": {
+    "one_way_bps": 3.0,
+    "basis": "absolute traded notional / pre-trade portfolio equity",
+    "netting": "within each pair leg; no netting across different pairs",
+    "rebalance": "daily targets versus price-drifted holdings after previous costs",
+    "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
+    "terminal_liquidation": true,
+    "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
+  },
+  "bootstrap": "paired circular, 21 days, 10000 draws, seed 20261109"
+}

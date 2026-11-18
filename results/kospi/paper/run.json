@@ -1,0 +1,22 @@
+{
+  "completed_at": "2026-11-18T10:47:18.217836+00:00",
+  "paper": "https://arxiv.org/html/2403.07998v1",
+  "price_sha256": "e6a9e74a3f23954603542d05ae5dc7dca62e0b88c0795e1aba6291bf0fa37f93",
+  "months": 77,
+  "trading_days": 1577,
+  "first_date": "2017-01-02",
+  "last_date": "2023-05-31",
+  "regression_window": 504,
+  "adf_lag": 1,
+  "baseline_pairs": 250,
+  "z_threshold": 2.0,
+  "transaction_cost": {
+    "one_way_bps": 3.0,
+    "basis": "absolute traded notional / pre-trade portfolio equity",
+    "netting": "within each pair leg; no netting across different pairs",
+    "rebalance": "daily targets versus price-drifted holdings after previous costs",
+    "monthly_boundary": "carry retained pairs; close removed pairs and open new pairs",
+    "terminal_liquidation": true,
+    "execution_prices": "existing close-to-close marked prices; missing quotes forward-filled"
+  }
+}

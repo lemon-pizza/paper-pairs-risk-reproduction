@@ -24,14 +24,14 @@ class ExecutionCostTests(unittest.TestCase):
     def test_entry_and_terminal_exit_are_both_charged(self):
         state = CostState()
         fees, rebalance, closing = transaction_costs(block([.5], [-.5]), [0.], state, True)
-        np.testing.assert_allclose([fees[0], rebalance[0], closing[0]], [.001, 1., 1.])
+        np.testing.assert_allclose([fees[0], rebalance[0], closing[0]], [.0006, 1., 1.])
         self.assertEqual(state.holdings, {})
 
     def test_unchanged_holdings_have_no_new_cost(self):
         state = CostState()
         transaction_costs(block([.5], [-.5]), [0.], state)
         # Keep the same shares: fees have reduced equity, so weights are larger.
-        carried = .5 / .9995
+        carried = .5 / .9997
         fees, rebalance, _ = transaction_costs(
             block([carried], [-carried], start='2020-01-02'), [0.], state)
         np.testing.assert_allclose([fees[0], rebalance[0]], [0., 0.], atol=1e-15)
@@ -39,28 +39,28 @@ class ExecutionCostTests(unittest.TestCase):
     def test_reversal_pays_close_and_open(self):
         state = CostState({PAIR: (.5, -.5)})
         fees, rebalance, _ = transaction_costs(block([-.5], [.5]), [0.], state)
-        np.testing.assert_allclose([fees[0], rebalance[0]], [.001, 2.])
+        np.testing.assert_allclose([fees[0], rebalance[0]], [.0006, 2.])
 
     def test_exit_is_charged_on_a_day_without_active_pairs(self):
         state = CostState({PAIR: (.5, -.5)})
         fees, rebalance, _ = transaction_costs(block([0.], [0.]), [0.], state)
-        np.testing.assert_allclose([fees[0], rebalance[0]], [.0005, 1.])
+        np.testing.assert_allclose([fees[0], rebalance[0]], [.0003, 1.])
         self.assertEqual(state.holdings, {})
 
     def test_terminal_trade_uses_end_prices(self):
         fees, rebalance, closing = transaction_costs(
             block([.5], [-.5], [.2], [0.]), [.1], CostState(), True)
-        np.testing.assert_allclose([fees[0], rebalance[0], closing[0]], [.00105, 1., 1.1])
-        self.assertAlmostEqual(.1 - fees[0], .09895)
+        np.testing.assert_allclose([fees[0], rebalance[0], closing[0]], [.00063, 1., 1.1])
+        self.assertAlmostEqual(.1 - fees[0], .09937)
 
     def test_price_drift_and_costs_change_next_rebalance(self):
         state = CostState()
         transaction_costs(block([.5], [-.5], [.2], [0.]), [.1], state)
         fees, rebalance, _ = transaction_costs(
             block([.5], [-.5], start='2020-01-02'), [0.], state)
-        traded = abs(.5 - .6 / 1.0995) + abs(-.5 + .5 / 1.0995)
+        traded = abs(.5 - .6 / 1.0997) + abs(-.5 + .5 / 1.0997)
         self.assertAlmostEqual(rebalance[0], traded)
-        self.assertAlmostEqual(fees[0], .0005 * traded)
+        self.assertAlmostEqual(fees[0], .0003 * traded)
 
     def test_month_split_preserves_holdings_without_forced_exit(self):
         whole = block([.5, .5, 0.], [-.5, -.5, 0.], [.1, -.1, 0.], [0., .05, 0.])
@@ -79,7 +79,7 @@ class ExecutionCostTests(unittest.TestCase):
         # A different pair sharing AAA is a separate sleeve, so both legs trade.
         fees, rebalance, _ = transaction_costs(
             block([.5], [-.5], pairs=(('AAA', 'CCC'),)), [0.], state)
-        np.testing.assert_allclose([fees[0], rebalance[0]], [.001, 2.])
+        np.testing.assert_allclose([fees[0], rebalance[0]], [.0006, 2.])
 
     def test_pair_order_does_not_change_costs(self):
         state = CostState({PAIR: (.2, -.3), ('CCC', 'DDD'): (-.1, .4)})
@@ -101,8 +101,8 @@ class ExecutionCostTests(unittest.TestCase):
         positions = block([.5], [-.5], [.2], [0.])
         daily = pd.DataFrame({'date': positions.dates, 'strategy': ['MZ'], 'gross_return': [.1]})
         result = charge_costs(daily, {'MZ': positions}, {}, liquidate=True)
-        self.assertAlmostEqual(result.fee.iloc[0], .00105)
-        self.assertAlmostEqual(result.net_return.iloc[0], .09895)
+        self.assertAlmostEqual(result.fee.iloc[0], .00063)
+        self.assertAlmostEqual(result.net_return.iloc[0], .09937)
         self.assertAlmostEqual(result.turnover.iloc[0], 2.1)
 
     def test_invalid_inputs_fail_before_charging(self):

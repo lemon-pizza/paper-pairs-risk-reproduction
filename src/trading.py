@@ -34,11 +34,13 @@ def rolling_endpoint(x, y, window=WINDOW):
 def summarize_original_style(returns):
     """Preserve source semantics: Sharpe excludes NaN; cumprod fills NaN=0."""
     r = pd.Series(returns, dtype=float)
+    ending_wealth = (1 + r.fillna(0)).cumprod().iloc[-1]
     return {
         'rows_including_duplicate_dates': len(r),
         'non_nan_rows': int(r.notna().sum()),
         'sharpe': float(np.sqrt(252) * r.mean() / r.std()),
         'sortino': float(np.sqrt(252) * r.mean() / r[r < 0].std()),
-        'cumulative_return': float(((1 + r.fillna(0)).cumprod() - 1).iloc[-1]),
+        'cumulative_return': float(ending_wealth - 1),
+        'annualized_return': float(ending_wealth ** (252 / len(r)) - 1),
         'simple_return': float(r.fillna(0).cumsum().iloc[-1]),
     }

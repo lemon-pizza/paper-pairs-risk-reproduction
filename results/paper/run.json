@@ -1,5 +1,5 @@
 {
-  "completed_at": "2026-11-15T07:12:59.143944+00:00",
+  "completed_at": "2026-11-18T10:23:49.368982+00:00",
   "paper": "https://arxiv.org/html/2403.07998v1",
   "price_sha256": "7605eab6525ddb5db66965d1559a56b48375f11a14cd1040eaa12318a545939c",
   "months": 77,
@@ -11,7 +11,7 @@
   "baseline_pairs": 250,
   "z_threshold": 2.0,
   "transaction_cost": {
-    "one_way_bps": 5.0,
+    "one_way_bps": 3.0,
     "basis": "absolute traded notional / pre-trade portfolio equity",
     "netting": "within each pair leg; no netting across different pairs",
     "rebalance": "daily targets versus price-drifted holdings after previous costs",
