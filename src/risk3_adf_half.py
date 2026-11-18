@@ -18,6 +18,7 @@ from .trading import WINDOW, summarize_original_style
 PARENT = 'RISK3'
 MODEL = 'RISK3_half_adf_budget'
 SUITE = 'risk3_adf_half'
+SIGNAL_CLOSE = 'signal_close'
 HISTORY = WINDOW + TRAIN_DAYS
 
 
@@ -70,6 +71,8 @@ def run_month(prices, parent_pairs, budget, trading_days, available=None):
     }
 
     end = HISTORY + trading_days
+    period = slice(HISTORY, end)
+    dates = prices.index[period]
     beta, signal = z_history(logs[TRAIN_DAYS:end - 1], x, y)
     keys = tuple(zip(ranked.asset_x, ranked.asset_y))
     positions = {}
@@ -77,13 +80,9 @@ def run_month(prices, parent_pairs, budget, trading_days, available=None):
         wx, wy = pair_weights(beta[:, :count], signal[:, :count])
         wx *= fraction
         wy *= fraction
-        for execution, lag in [('signal_close', 0), ('next_close', 1)]:
-            # A delayed month's last target earns the first return of the following month.
-            period = slice(HISTORY + lag, end + lag)
-            dates = prices.index[period]
-            positions[model, execution] = PairPositions(
-                dates, keys[:count], wx[:len(dates)], wy[:len(dates)],
-                returns[period, x[:count]], returns[period, y[:count]])
+        positions[model, SIGNAL_CLOSE] = PairPositions(
+            dates, keys[:count], wx[:len(dates)], wy[:len(dates)],
+            returns[period, x[:count]], returns[period, y[:count]])
     return kept, diagnostics, positions
 
 
@@ -95,8 +94,8 @@ def daily_rows(block, state, final_date, market=None):
 
 def performance(daily):
     rows = []
-    for (model, execution), group in daily.groupby(['model', 'execution'], sort=False):
-        row = {'model': model, 'execution': execution, 'days': len(group)}
+    for model, group in daily.loc[daily.execution.eq(SIGNAL_CLOSE)].groupby('model', sort=False):
+        row = {'model': model, 'execution': SIGNAL_CLOSE, 'days': len(group)}
         for basis in ('gross', 'net'):
             stats = summarize_original_style(group[basis + '_return'])
             for metric in ('cumulative_return', 'annualized_return', 'sharpe'):
@@ -139,13 +138,6 @@ def main():
     months = pd.read_csv(parent / 'monthly.csv', parse_dates=['cutoff'])
     months = months[months.model.eq(PARENT) & months.signal.eq('Z')].set_index('cutoff', verify_integrity=True)
     daily, selections, diagnostics, states = [], [], [], {}
-    # There is no earlier signal to execute for the first delayed return.
-    empty = np.empty((1, 0))
-    cash = PairPositions(sample.index[:1], (), empty, empty, empty, empty)
-    for model in (PARENT, MODEL):
-        state = states.setdefault((model, 'next_close'), CostState())
-        first_day = daily_rows(cash, state, sample.index[-1], market)
-        daily.append(first_day.assign(model=model, execution='next_close', cutoff=pd.NaT))
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         jobs = []
         for _, month in sample.groupby(sample.index.to_period('M')):
@@ -156,8 +148,7 @@ def main():
             if selected.empty or len(selected) != params.pairs:
                 raise ValueError(f'{cutoff}: incomplete RISK3 parent selections')
             tickers = pd.unique(pd.concat([selected.asset_x, selected.asset_y], ignore_index=True))
-            extra_day = int(month.index[-1] < sample.index[-1])
-            panel = prices.iloc[first - HISTORY:last + 1 + extra_day].loc[:, tickers]
+            panel = prices.iloc[first - HISTORY:last + 1].loc[:, tickers]
             available = market.available.loc[panel.index, tickers].to_numpy()
             jobs.append(pool.submit(run_month, panel, selected, params.risk_budget, len(month), available))
         for job in jobs:
@@ -165,19 +156,17 @@ def main():
             selections.append(kept)
             diagnostics.append(diagnostic)
             for key, block in positions.items():
-                if not len(block.dates):
-                    continue
                 model, execution = key
                 rows = daily_rows(block, states.setdefault(key, CostState()), sample.index[-1], market)
                 daily.append(rows.assign(model=model, execution=execution, cutoff=diagnostic['cutoff']))
 
     daily = pd.concat(daily, ignore_index=True)
-    for _, group in daily.groupby(['model', 'execution']):
+    for _, group in daily.groupby('model'):
         if not pd.DatetimeIndex(group.date).equals(sample.index):
             raise ValueError('RISK3 extension returns differ from the market trading calendar')
     reference = pd.read_csv(parent / 'daily.csv', parse_dates=['date'])
     reference = reference[reference.model.eq(PARENT) & reference.signal.eq('Z')].set_index('date')
-    replay = daily[daily.model.eq(PARENT) & daily.execution.eq('signal_close')].set_index('date')
+    replay = daily[daily.model.eq(PARENT)].set_index('date')
     columns = ['gross_return', 'net_return', 'active_pairs', 'turnover', 'fee']
     pd.testing.assert_frame_equal(replay[columns], reference[columns], check_dtype=False,
                                   check_exact=False, rtol=1e-10, atol=1e-12)
@@ -192,7 +181,7 @@ def main():
                     ranking='descending parent adf_score; ties by asset_x then asset_y',
                     pair_count='floor(parent_pairs / 2)', risk_budget='parent monthly risk_budget',
                     capital_fraction='up to 1; solve executable training variance at the inherited budget',
-                    cash_return=0, executions=['signal_close', 'next_close'], terminal_holdings=terminal_holdings(states))
+                    cash_return=0, executions=[SIGNAL_CLOSE], terminal_holdings=terminal_holdings(states))
     (output / 'run.json').write_text(json.dumps(manifest, indent=2) + '\n')
     print(metrics.to_string(index=False))
 

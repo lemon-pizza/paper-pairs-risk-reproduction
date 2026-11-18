@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.risk3_adf_half import MODEL as HALF_MODEL, SUITE as HALF_SUITE
+from src.risk3_adf_half import MODEL as HALF_MODEL, SIGNAL_CLOSE, SUITE as HALF_SUITE
 from src.paper_overlap import SEARCH_STOP
 from src.selection import sha256
 from src.trading import summarize_original_style
@@ -38,7 +38,7 @@ def market_rows(market, folder):
     for suite, key, names in suites:
         data = pd.read_csv(folder / suite / 'daily.csv', parse_dates=['date'])
         if suite == HALF_SUITE:
-            data = data[data.execution.eq('signal_close')]
+            data = data[data.execution.eq(SIGNAL_CLOSE)]
         for name in names:
             returns = data[data[key].eq(name)]
             dates = pd.DatetimeIndex(returns.date)

@@ -12,7 +12,7 @@ class Risk3AdfHalfTests(unittest.TestCase):
     def setUpClass(cls):
         rng = np.random.default_rng(17)
         cls.days = 5
-        n = half.HISTORY + cls.days + 1  # One extra session across the monthly boundary.
+        n = half.HISTORY + cls.days
         logs = 5 + rng.normal(0., .003, (n, 4)).cumsum(axis=0)
         logs[half.WINDOW::11, 1] += .09
         logs[half.HISTORY - 1::2, 3] -= .15
@@ -59,21 +59,16 @@ class Risk3AdfHalfTests(unittest.TestCase):
         np.testing.assert_allclose(new_book[half.MODEL, 'signal_close'].x_weight[0],
                                    book[half.MODEL, 'signal_close'].x_weight[0])
 
-    def test_delayed_fills_keep_the_parent_month_targets_and_use_the_next_prices(self):
+    def test_signal_close_uses_daily_returns_through_month_end(self):
         _, _, book = half.run_month(self.prices, self.parent, self.budget, self.days)
-        _, _, final_book = half.run_month(self.prices.iloc[:-1], self.parent, self.budget, self.days)
-        for model in (half.PARENT, half.MODEL):
-            direct, delayed = book[model, 'signal_close'], book[model, 'next_close']
-            self.assertEqual(delayed.pairs, direct.pairs)
-            self.assertEqual(delayed.dates[-1], self.prices.index[-1])
-            self.assertEqual(direct.dates[-1], self.prices.index[-2])
-            np.testing.assert_array_equal(delayed.x_weight, direct.x_weight)
-            np.testing.assert_array_equal(delayed.y_weight, direct.y_weight)
-            expected = self.prices.pct_change().loc[delayed.dates, [p[0] for p in delayed.pairs]]
-            np.testing.assert_allclose(delayed.x_return, expected)
-            final = final_book[model, 'next_close']
-            self.assertEqual(final.dates[-1], direct.dates[-1])
-            np.testing.assert_array_equal(final.y_weight, direct.y_weight[:-1])
+        self.assertEqual(set(book), {(half.PARENT, 'signal_close'), (half.MODEL, 'signal_close')})
+        dates = self.prices.index[half.HISTORY:]
+        returns = self.prices.pct_change(fill_method=None).loc[dates]
+        for block in book.values():
+            pd.testing.assert_index_equal(block.dates, dates)
+            x, y = zip(*block.pairs)
+            np.testing.assert_allclose(block.x_return, returns.loc[:, list(x)])
+            np.testing.assert_allclose(block.y_return, returns.loc[:, list(y)])
 
     def test_single_parent_pair_leaves_top_half_in_cash(self):
         kept, info, book = half.run_month(self.prices, self.parent.iloc[:1], 0., self.days)

@@ -172,7 +172,7 @@ def executed_days(block, state, liquidate, market=None):
     can_trade = market.available.to_numpy()
     rows = []
     for t, day in enumerate(row):
-        # Weights earn the return ending on day; timing is the same for delayed targets.
+        # The holdings set at the preceding close earn the return ending on day.
         allowed = can_trade[day - 1, assets]
         held = np.where(allowed, target[t], previous)
         rebalance = np.abs(held - previous).sum()
