@@ -18,7 +18,7 @@ def market_rows(market, folder):
     overlap = json.loads((folder / 'paper_overlap/run.json').read_text())
     suites = [('paper', 'strategy', ('MZ', 'BZ')), ('paper_overlap', 'model', ('CAP3', 'RISK3'))]
     runs = [('paper_overlap', overlap)]
-    if (folder / HALF_SUITE).is_dir():
+    if market == 'KOSPI' and (folder / HALF_SUITE).is_dir():
         extension = json.loads((folder / HALF_SUITE / 'run.json').read_text())
         for name in ('selections', 'monthly'):
             if extension[f'parent_{name}_sha256'] != sha256(folder / 'paper_overlap' / f'{name}.csv'):
@@ -60,8 +60,6 @@ def main():
     parser.add_argument('--kospi', type=Path, default=ROOT / 'kospi')
     parser.add_argument('--output', type=Path, default=ROOT / 'market_comparison.csv')
     args = parser.parse_args()
-    if (args.sp500 / HALF_SUITE).is_dir() != (args.kospi / HALF_SUITE).is_dir():
-        parser.error('Run the RISK3 ADF top-half extension for both markets before combining the results')
     frame = pd.DataFrame(market_rows('S&P 500', args.sp500) + market_rows('KOSPI', args.kospi))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(args.output, index=False)

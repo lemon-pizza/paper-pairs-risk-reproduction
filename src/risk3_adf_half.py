@@ -1,4 +1,4 @@
-"""Trade the highest-scoring half of RISK3's pairs within its monthly variance budget."""
+"""Trade the highest-scoring half of KOSPI RISK3 pairs within its monthly variance budget."""
 from __future__ import annotations
 
 import argparse
@@ -121,7 +121,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--workers', type=int, default=4)
     paper.add_input_arguments(parser)
+    parser.set_defaults(output_root=paper.ROOT / 'results' / 'kospi')
     args = parser.parse_args()
+    if args.prices is None:
+        parser.error('Supply the KOSPI price file with --prices')
     if args.workers < 1:
         parser.error('--workers must be positive')
     parent = args.output_root / 'paper_overlap'
